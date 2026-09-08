@@ -1,0 +1,36 @@
+{
+  "name": "starlight-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bethel Starlight Check-in System - PWA check-in for church children's ministry with Brother QL-820NWB label printing",
+  "scripts": {
+    "dev": "next dev -p 4900",
+    "build": "next build",
+    "start": "next start -p 4900",
+    "lint": "next lint",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:seed": "node scripts/migrate.mjs --seed",
+    "icons": "node scripts/gen-icons.mjs",
+    "agent": "node print-agent/agent.mjs",
+    "test": "tsc src/lib/raster.ts src/lib/brother.ts src/lib/label.ts src/lib/poll-interval.ts --outDir .tmp-test --module commonjs --target es2022 --moduleResolution node --lib dom,es2022 --skipLibCheck && node tests/raster.test.cjs && node tests/label.test.cjs && node tests/poll-interval.test.cjs",
+    "db:proxy": "node scripts/neon-http-proxy.mjs",
+    "test:sql": "node tests/sql.test.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "next": "^15.5.25",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.12",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "pg": "^8.13.1",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

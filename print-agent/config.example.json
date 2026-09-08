@@ -1,0 +1,10 @@
+{
+  "appUrl": "https://starlight-checkin.vercel.app",
+  "token": "the same value as PRINT_AGENT_TOKEN in the app environment",
+  "agentId": "lobby-pc",
+  "agentName": "Lobby PC",
+  "printerHost": "192.168.1.50",
+  "printerPort": 9100,
+  "failurePauseMs": 5000,
+  "preflightStatus": true
+}
