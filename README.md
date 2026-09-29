@@ -5,7 +5,7 @@
 
 - **프론트엔드/백엔드**: Next.js 15 (App Router), Vercel 배포
 - **데이터베이스**: Neon PostgreSQL
-- **프린터**: Brother QL-820NWB (이더넷/Wi-Fi, raw 9100 포트)
+- **프린터**: Brother QL-820NWBc (이더넷/Wi-Fi, raw 9100 포트)
 - **아이패드**: 홈 화면에 추가하면 PWA로 전체화면 실행
 
 ---
@@ -50,7 +50,7 @@ Neon Postgres  ── print_jobs 큐
 교회 LAN의 프린트 에이전트 (Node, 의존성 0개)
   │  5. 받은 바이트를 그대로 9100 포트에 write
   ▼
-Brother QL-820NWB
+Brother QL-820NWBc
 ```
 
 이 구조의 장점:
@@ -128,7 +128,11 @@ npx vercel --prod
 
 `vercel env` 는 Preview / Development 환경에도 각각 넣어두면 편합니다.
 
-### 3-3. 프린터 (QL-820NWB)
+### 3-3. 프린터 (QL-820NWBc)
+
+QL-820NWBc 는 QL-820NWB 의 후속 리비전입니다. Brother는 두 모델을 한 제품
+(QL-820NWB/820NWBc)으로 묶어 지원하며 래스터 커맨드 레퍼런스도 같은 문서를
+쓰므로, 이 앱은 둘 중 어느 쪽이든 그대로 동작합니다.
 
 1. 프린터 본체에서 **[메뉴] → [WLAN] 또는 [유선 LAN] → [IP 주소]** 를 확인합니다.
    고정 IP나 DHCP 예약을 걸어두는 것을 강력히 권합니다 — IP가 바뀌면 인쇄가 멈춥니다.

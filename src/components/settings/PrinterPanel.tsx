@@ -202,7 +202,7 @@ export default function PrinterPanel({
         )}
         {status && status.online && !draft.host && (
           <Notice kind="warn">
-            에이전트는 연결되었지만 프린터 IP가 비어 있습니다. QL-820NWB의 IP를 입력해 주세요.
+            에이전트는 연결되었지만 프린터 IP가 비어 있습니다. QL-820NWBc의 IP를 입력해 주세요.
           </Notice>
         )}
 
@@ -225,7 +225,7 @@ export default function PrinterPanel({
               inputMode="decimal"
               autoComplete="off"
             />
-            <span className="fieldHint">QL-820NWB 본체에서 [메뉴 → WLAN/유선 LAN → IP 주소]</span>
+            <span className="fieldHint">QL-820NWBc 본체에서 [메뉴 → WLAN/유선 LAN → IP 주소]</span>
           </div>
           <div className="field">
             <label htmlFor="port">포트</label>
