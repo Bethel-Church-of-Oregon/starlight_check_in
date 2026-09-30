@@ -94,9 +94,15 @@ const DEMO_STUDENTS = [
   ['정하윤', 'Hayoon Jung', '6th', 'female'],
 ]
 
+// Neon hands out `sslmode=require`. node-postgres currently treats that as
+// full certificate verification but warns that v9 will weaken it to libpq's
+// meaning. Ask for verification explicitly so the behaviour is pinned and the
+// warning goes away. `sslmode=disable` (the local Docker database) is kept.
 const client = new pg.Client({
-  connectionString,
-  ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
+  connectionString: connectionString.replace(
+    /([?&]sslmode=)(prefer|require|verify-ca)\b/,
+    '$1verify-full'
+  ),
 })
 
 async function main() {
