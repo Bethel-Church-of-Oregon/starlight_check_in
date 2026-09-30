@@ -71,7 +71,8 @@ Let's Encrypt 인증서를 받거나, 도메인이 없으면 자체 인증서를
 ### 3-1. Neon 데이터베이스
 
 1. [neon.tech](https://neon.tech) 에서 프로젝트를 만듭니다. Region은
-   **AWS US West 2 (Oregon)** 이 가장 가깝습니다.
+   **AWS US West 2 (Oregon)**. 서버 함수를 포틀랜드(`pdx1`)에 고정해 두었기 때문에
+   이 둘이 같은 곳에 있어야 합니다 — 아래 3-2 참고.
 2. 프로젝트 대시보드 → **Connect** → **Connection pooling** 켜기 → 문자열 복사.
    호스트에 `-pooler` 가 들어 있으면 맞습니다.
 
@@ -96,6 +97,22 @@ npm run db:seed         # 위 + 데모 학생 7명 (원하면)
 입장에서는 오히려 더 안전합니다** — 자세한 비교는 [9장](#9-호스팅-선택-vercel-vs-cloudflare)에.
 
 #### Vercel
+
+**함수 지역은 [`vercel.json`](vercel.json) 에서 포틀랜드(`pdx1`)로 고정되어 있습니다.**
+Vercel의 기본값은 워싱턴 DC(`iad1`)인데, 그대로 두면 함수와 오리건의 DB가 대륙
+양쪽 끝에 떨어집니다. 체크인 한 번에 DB 쿼리가 여섯 번 차례로 오가므로 차이가
+큽니다 (대략치):
+
+| 함수 | DB | 체크인 1회 네트워크 대기 |
+|---|---|---|
+| 워싱턴 DC (기본값) | 오리건 | 약 490 ms |
+| 워싱턴 DC | 버지니아 (us-east-1) | 약 80 ms |
+| **포틀랜드 (`pdx1`)** | **오리건 (us-west-2)** | **약 20 ms** |
+
+교회와 가까운 서부에 둘 다 두는 쪽이 가장 빠릅니다. Hobby 플랜도 지역 하나는
+고를 수 있습니다. 동부로 가고 싶다면 `vercel.json` 을 `iad1` 로 바꾸고 Neon을
+**AWS US East 1 (N. Virginia)** 에 만들면 됩니다 — 핵심은 둘을 같은 곳에 두는
+것입니다.
 
 ```bash
 npx vercel link
@@ -300,6 +317,7 @@ src/
     messages.ts               랜덤 축하 메시지
     admin.ts                  코드 해시(scrypt) + 서명 세션 쿠키
 db/schema.sql                 전체 스키마 (멱등)
+vercel.json                   함수 지역 고정 (pdx1 — Neon 오리건과 같은 곳)
 bridge/
   bridge.mjs                  라즈베리파이 프린트 브릿지 (HTTPS → TCP 9100)
   make-cert.sh                도메인 없을 때 쓰는 자체 인증서 발급
@@ -363,6 +381,8 @@ tests/                        래스터 / 라벨 / 브릿지 / SQL / e2e
    DB가 새더라도 pepper 없이는 대입이 안 되므로 오히려 낫습니다.
 3. Neon은 그대로 둡니다 — `@neondatabase/serverless` 는 HTTP 드라이버라
    Workers에서 그대로 동작합니다. Hyperdrive 같은 것도 필요 없습니다.
+   지역도 오리건 그대로가 맞습니다. Workers는 요청한 사용자와 가까운 곳(서부)에서
+   실행되므로 오리건 DB와 가깝습니다. `vercel.json` 은 Cloudflare에서는 쓰이지 않습니다.
 
 나머지는 손댈 게 없습니다. `src/` 에서 쓰는 Node 전용 API는 `node:crypto` 뿐이고
 (`createHmac` · `randomBytes` · `timingSafeEqual`), 전부 `nodejs_compat` 에서
