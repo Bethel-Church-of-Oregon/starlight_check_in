@@ -48,8 +48,18 @@ export interface GeneralSettings {
 }
 
 export interface PrinterSettings {
-  host: string
-  port: number
+  /**
+   * The Raspberry Pi print bridge on the church LAN, e.g.
+   * "https://192.168.1.60:9443". The printer's own IP lives in the bridge's
+   * config, not here — a browser must never be able to point the bridge at an
+   * arbitrary host.
+   */
+  bridgeUrl: string
+  /**
+   * Sent as X-Bridge-Key. It is visible to anyone who can load the app, so it
+   * only keeps other devices on the LAN from printing; it is not a secret.
+   */
+  bridgeKey: string
   mediaWidthMm: number
   labelLengthMm: number
   copies: number

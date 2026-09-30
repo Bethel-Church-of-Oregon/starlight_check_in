@@ -4,8 +4,7 @@
  * Mirrors the exact SQL the route handlers issue and runs it against a real
  * Postgres, because several of these are the kind of query that type-checks
  * fine and then fails at runtime: a generated search column, a LATERAL join,
- * `FOR UPDATE SKIP LOCKED` inside an UPDATE subquery, `make_interval`, and
- * jsonb upserts.
+ * cascades, and jsonb upserts.
  *
  *   docker run -d --name starlight-pg -e POSTGRES_PASSWORD=dev \
  *     -e POSTGRES_DB=starlight -p 55432:5432 postgres:16-alpine
@@ -44,9 +43,7 @@ const q = (text, params) => client.query(text, params)
 await client.connect()
 
 // A clean slate for the tables this file writes to.
-await q(`delete from print_jobs`)
 await q(`delete from check_ins`)
-await q(`delete from print_agents`)
 await q(`delete from students where english_name like 'ZZTest%'`)
 
 const TODAY = '2026-09-06'
@@ -221,144 +218,13 @@ await t('check-out and undo both work', async () => {
   assert.strictEqual(undo.rows[0].checked_out_at, null)
 })
 
-// --- /api/print/* ---------------------------------------------------------
-await t('agent heartbeat upserts without clobbering known fields', async () => {
-  const upsert = `
-    insert into print_agents (id, name, printer_host, version, last_seen_at)
-    values ($1, $2, $3, $4, now())
-    on conflict (id) do update set
-      last_seen_at = now(),
-      name = coalesce(excluded.name, print_agents.name),
-      printer_host = coalesce(excluded.printer_host, print_agents.printer_host),
-      version = coalesce(excluded.version, print_agents.version)`
-  await q(upsert, ['lobby-pc', 'Lobby PC', '192.168.1.50', '1.0.0'])
-  await q(upsert, ['lobby-pc', null, null, null])
-  const { rows } = await q(`select * from print_agents where id = 'lobby-pc'`)
-  assert.strictEqual(rows[0].name, 'Lobby PC', 'a null in the second poll did not erase the name')
-  assert.strictEqual(rows[0].printer_host, '192.168.1.50')
-})
-
-await t('online window computes from the heartbeat', async () => {
+// --- retired tables ------------------------------------------------------
+await t('the retired print queue tables are gone', async () => {
   const { rows } = await q(
-    `select (now() - last_seen_at) < interval '20 seconds' as online from print_agents where id = 'lobby-pc'`
+    `select table_name from information_schema.tables
+     where table_schema = 'public' and table_name in ('print_jobs', 'print_agents')`
   )
-  assert.strictEqual(rows[0].online, true)
-})
-
-await t('claiming a job with FOR UPDATE SKIP LOCKED returns exactly one row', async () => {
-  for (const label of ['job-a', 'job-b', 'job-c']) {
-    await q(
-      `insert into print_jobs (kind, label, data, byte_length) values ('label', $1, $2, $3)`,
-      [label, Buffer.from(label).toString('base64'), label.length]
-    )
-  }
-  const claimSql = `
-    update print_jobs
-    set status = 'claimed', claimed_at = now(), agent_id = $1, attempts = attempts + 1
-    where id = (
-      select id from print_jobs
-      where status = 'queued'
-      order by created_at
-      limit 1
-      for update skip locked
-    )
-    returning id, kind, label, data, byte_length, attempts`
-
-  const first = await q(claimSql, ['lobby-pc'])
-  assert.strictEqual(first.rows.length, 1)
-  assert.strictEqual(first.rows[0].label, 'job-a', 'FIFO order')
-  assert.strictEqual(first.rows[0].attempts, 1)
-
-  const second = await q(claimSql, ['lobby-pc'])
-  assert.strictEqual(second.rows[0].label, 'job-b')
-
-  const { rows: remaining } = await q(
-    `select count(*)::int as n from print_jobs where status = 'queued'`
-  )
-  assert.strictEqual(remaining[0].n, 1)
-})
-
-await t('an empty queue claims nothing rather than erroring', async () => {
-  await q(`update print_jobs set status = 'done'`)
-  const { rows } = await q(`
-    update print_jobs
-    set status = 'claimed', claimed_at = now(), agent_id = 'x', attempts = attempts + 1
-    where id = (select id from print_jobs where status = 'queued' order by created_at limit 1 for update skip locked)
-    returning id`)
-  assert.strictEqual(rows.length, 0)
-})
-
-await t('stale claims requeue, and burn out after 3 attempts', async () => {
-  await q(`delete from print_jobs`)
-  await q(
-    `insert into print_jobs (label, data, status, attempts, claimed_at)
-     values ('stale-1', 'AA==', 'claimed', 1, now() - interval '120 seconds'),
-            ('stale-2', 'AA==', 'claimed', 3, now() - interval '120 seconds'),
-            ('fresh',   'AA==', 'claimed', 1, now())`
-  )
-  await q(
-    `update print_jobs
-     set status = case when attempts >= $1 then 'error' else 'queued' end,
-         error = case when attempts >= $1
-                      then 'Agent claimed the job but never reported back'
-                      else error end
-     where status = 'claimed'
-       and claimed_at < now() - make_interval(secs => $2)`,
-    [3, 45]
-  )
-  const { rows } = await q(`select label, status from print_jobs order by label`)
-  assert.deepStrictEqual(rows, [
-    { label: 'fresh', status: 'claimed' },
-    { label: 'stale-1', status: 'queued' },
-    { label: 'stale-2', status: 'error' },
-  ])
-})
-
-await t('completion marks done, or requeues until attempts run out', async () => {
-  await q(`delete from print_jobs`)
-  const { rows: ins } = await q(
-    `insert into print_jobs (label, data, status, attempts) values
-       ('ok', 'AA==', 'claimed', 1),
-       ('retry', 'AA==', 'claimed', 1),
-       ('giveup', 'AA==', 'claimed', 3)
-     returning id, label`
-  )
-  const byLabel = Object.fromEntries(ins.map((r) => [r.label, r.id]))
-  const completeSql = `
-    update print_jobs
-    set status = case
-          when $2::boolean then 'done'
-          when attempts >= 3 then 'error'
-          else 'queued'
-        end,
-        completed_at = case when $2::boolean then now() else null end,
-        error = $3
-    where id = $1::uuid
-    returning status`
-
-  assert.strictEqual((await q(completeSql, [byLabel.ok, true, null])).rows[0].status, 'done')
-  assert.strictEqual((await q(completeSql, [byLabel.retry, false, 'no media'])).rows[0].status, 'queued')
-  assert.strictEqual((await q(completeSql, [byLabel.giveup, false, 'no media'])).rows[0].status, 'error')
-})
-
-await t('status counts filter by state over the last day', async () => {
-  const { rows } = await q(`
-    select
-      count(*) filter (where status = 'queued')::int  as queued,
-      count(*) filter (where status = 'claimed')::int as claimed,
-      count(*) filter (where status = 'error')::int   as failed
-    from print_jobs
-    where created_at > now() - interval '1 day'`)
-  assert.deepStrictEqual(rows[0], { queued: 1, claimed: 0, failed: 1 })
-})
-
-await t('requeue-all resets failed jobs', async () => {
-  const { rows } = await q(`
-    update print_jobs
-    set status = 'queued', attempts = 0, error = null, claimed_at = null, completed_at = null
-    where status = 'error' and created_at > now() - interval '1 day'
-    returning id`)
-  assert.strictEqual(rows.length, 1)
+  assert.deepStrictEqual(rows, [])
 })
 
 // --- /api/settings --------------------------------------------------------
@@ -367,10 +233,10 @@ await t('jsonb settings upsert replaces the value', async () => {
     insert into app_settings (key, value, updated_at)
     values ($1, $2::jsonb, now())
     on conflict (key) do update set value = excluded.value, updated_at = now()`
-  await q(upsert, ['printer', JSON.stringify({ host: '192.168.1.50', port: 9100 })])
-  await q(upsert, ['printer', JSON.stringify({ host: '10.0.0.7', port: 9100 })])
+  await q(upsert, ['printer', JSON.stringify({ bridgeUrl: 'https://192.168.1.60:9443' })])
+  await q(upsert, ['printer', JSON.stringify({ bridgeUrl: 'https://10.0.0.7:9443' })])
   const { rows } = await q(`select value from app_settings where key = 'printer'`)
-  assert.strictEqual(rows[0].value.host, '10.0.0.7')
+  assert.strictEqual(rows[0].value.bridgeUrl, 'https://10.0.0.7:9443')
 })
 
 await t('settings load reads the four keys in one query', async () => {

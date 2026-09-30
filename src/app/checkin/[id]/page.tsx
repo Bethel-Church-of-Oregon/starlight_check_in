@@ -6,21 +6,11 @@ import Avatar, { displayName } from '@/components/Avatar'
 import { AlertIcon, ArrowLeftIcon, CheckIcon, PrinterIcon } from '@/components/icons'
 import { useApp } from '@/components/app-context'
 import { randomCheckInMessage } from '@/lib/messages'
-import { renderLabelStream, waitForFonts } from '@/lib/label'
-import { base64FromBytes } from '@/lib/raster'
-import type { LabelPayload, Service, Student } from '@/lib/types'
+import { PrintError, buildLabelJob, sendToBridge } from '@/lib/print-client'
+import type { LabelPayload, LabelSettings, PrinterSettings, Service, Student } from '@/lib/types'
 
 type Phase = 'loading' | 'select' | 'submitting' | 'confirm'
-type PrintPhase =
-  | 'idle'
-  | 'rendering'
-  | 'queued'
-  | 'printing'
-  | 'done'
-  /** Still in the queue after our wait window, but the agent is alive. */
-  | 'pending'
-  | 'failed'
-  | 'skipped'
+type PrintPhase = 'idle' | 'rendering' | 'sending' | 'done' | 'failed' | 'skipped'
 
 interface HistoryRow {
   id: string
@@ -51,6 +41,8 @@ export default function CheckInScreen() {
   const [printPhase, setPrintPhase] = useState<PrintPhase>('idle')
   const [printError, setPrintError] = useState<string | null>(null)
   const [returnSeconds, setReturnSeconds] = useState<number | null>(null)
+  /** The assembled job, kept so "다시 인쇄" resends the exact same label. */
+  const lastJob = useRef<{ bytes: Uint8Array; printer: PrinterSettings; label: string } | null>(null)
 
   // --- load the student ---------------------------------------------------
   useEffect(() => {
@@ -87,6 +79,56 @@ export default function CheckInScreen() {
     return todayRow ?? null
   }, [history, app.general.timezone])
 
+  // --- printing -------------------------------------------------------------
+  const send = useCallback(async () => {
+    const job = lastJob.current
+    if (!job) return
+    setPrintPhase('sending')
+    setPrintError(null)
+    try {
+      await sendToBridge(job.printer, job.bytes, job.label)
+      setPrintPhase('done')
+    } catch (err) {
+      setPrintError(err instanceof Error ? err.message : '인쇄에 실패했습니다.')
+      setPrintPhase('failed')
+    }
+  }, [])
+
+  const runPrint = useCallback(
+    async (args: {
+      labelPayload: LabelPayload
+      label: LabelSettings
+      printer: PrinterSettings
+      timezone: string
+    }) => {
+      if (!args.printer?.enabled) {
+        setPrintPhase('skipped')
+        return
+      }
+      try {
+        setPrintPhase('rendering')
+        const bytes = await buildLabelJob({
+          payload: args.labelPayload,
+          label: args.label,
+          printer: args.printer,
+          timezone: args.timezone,
+        })
+        const name = args.labelPayload.koreanName ?? args.labelPayload.englishName ?? ''
+        lastJob.current = {
+          bytes,
+          printer: args.printer,
+          label: `${name} ${args.labelPayload.securityCode}`.trim(),
+        }
+      } catch (err) {
+        setPrintError(err instanceof PrintError ? err.message : '이름표를 만들지 못했습니다.')
+        setPrintPhase('failed')
+        return
+      }
+      await send()
+    },
+    [send]
+  )
+
   // --- check in -----------------------------------------------------------
   const submit = useCallback(async () => {
     if (!selected || phase === 'submitting') return
@@ -105,14 +147,11 @@ export default function CheckInScreen() {
       setResult({ labelPayload: data.labelPayload, alreadyCheckedIn: data.alreadyCheckedIn })
       setPhase('confirm')
 
-      void printLabel({
+      void runPrint({
         labelPayload: data.labelPayload,
         label: data.label,
-        print: data.print,
+        printer: data.printer,
         timezone: data.timezone,
-        checkInId: data.checkIn?.id ?? null,
-        setPrintPhase,
-        setPrintError,
       })
 
       setReturnSeconds(data.autoReturnSeconds ?? app.general.autoReturnSeconds ?? 5)
@@ -120,14 +159,16 @@ export default function CheckInScreen() {
       setError(err instanceof Error ? err.message : '체크인에 실패했습니다.')
       setPhase('select')
     }
-  }, [selected, phase, studentId, serviceId, app.general.autoReturnSeconds])
+  }, [selected, phase, studentId, serviceId, app.general.autoReturnSeconds, runPrint])
 
   // --- auto-return to the default screen ----------------------------------
+  // The countdown starts once the label has actually come out, so a child is
+  // never sent back to the search screen while their tag is still printing.
   const goHome = useCallback(() => router.push('/'), [router])
 
   useEffect(() => {
     if (phase !== 'confirm' || returnSeconds === null) return
-    if (printPhase === 'failed') return // hold on screen so a volunteer notices
+    if (printPhase !== 'done' && printPhase !== 'skipped') return
     const id = setTimeout(goHome, returnSeconds * 1000)
     return () => clearTimeout(id)
   }, [phase, returnSeconds, printPhase, goHome])
@@ -172,16 +213,19 @@ export default function CheckInScreen() {
         </div>
 
         {printPhase === 'failed' ? (
-          <button
-            type="button"
-            className="btn btnLarge"
-            style={{ marginTop: 22 }}
-            onClick={goHome}
-          >
-            확인
-          </button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 22, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {lastJob.current && (
+              <button type="button" className="btn btnLarge" onClick={() => void send()}>
+                다시 인쇄
+              </button>
+            )}
+            <button type="button" className="btn btnLarge" onClick={goHome}>
+              확인
+            </button>
+          </div>
         ) : (
-          returnSeconds !== null && (
+          returnSeconds !== null &&
+          (printPhase === 'done' || printPhase === 'skipped') && (
             <div className="progressTrack" aria-hidden="true">
               <div
                 className="progressBar"
@@ -298,119 +342,15 @@ export default function CheckInScreen() {
   )
 }
 
-// ---------------------------------------------------------------- printing
-
-async function printLabel(args: {
-  labelPayload: LabelPayload
-  label: Parameters<typeof renderLabelStream>[0]['label']
-  print: { enabled: boolean; mediaWidthMm: number; labelLengthMm: number; threshold: number }
-  timezone: string
-  checkInId: string | null
-  setPrintPhase: (phase: PrintPhase) => void
-  setPrintError: (error: string | null) => void
-}) {
-  const { setPrintPhase, setPrintError } = args
-
-  if (!args.print?.enabled) {
-    setPrintPhase('skipped')
-    return
-  }
-
-  try {
-    setPrintPhase('rendering')
-    await waitForFonts()
-
-    const { stream, rasterCount } = renderLabelStream({
-      payload: args.labelPayload,
-      label: args.label,
-      timezone: args.timezone,
-      mediaWidthMm: args.print.mediaWidthMm,
-      labelLengthMm: args.print.labelLengthMm,
-      threshold: args.print.threshold,
-    })
-
-    const response = await fetch('/api/print/jobs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        stream: base64FromBytes(stream),
-        rasterCount,
-        checkInId: args.checkInId,
-        kind: 'label',
-        label: `${args.labelPayload.koreanName ?? args.labelPayload.englishName ?? ''} ${
-          args.labelPayload.securityCode
-        }`.trim(),
-      }),
-    })
-
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error ?? '인쇄 대기열에 넣지 못했습니다.')
-
-    setPrintPhase('queued')
-    await waitForJob(data.job.id, setPrintPhase, setPrintError)
-  } catch (err) {
-    setPrintError(err instanceof Error ? err.message : '인쇄에 실패했습니다.')
-    setPrintPhase('failed')
-  }
-}
-
-/** Poll the queued job so the screen can say "printed" rather than "sent". */
-async function waitForJob(
-  jobId: string,
-  setPrintPhase: (phase: PrintPhase) => void,
-  setPrintError: (error: string | null) => void
-) {
-  const deadline = Date.now() + 15000
-  while (Date.now() < deadline) {
-    await sleep(700)
-    try {
-      const response = await fetch(`/api/print/jobs?id=${jobId}`, { cache: 'no-store' })
-      if (!response.ok) continue
-      const { job } = await response.json()
-      if (job.status === 'done') return setPrintPhase('done')
-      if (job.status === 'error') {
-        setPrintError(job.error ?? '프린터가 응답하지 않습니다.')
-        return setPrintPhase('failed')
-      }
-      if (job.status === 'claimed') setPrintPhase('printing')
-    } catch {
-      /* keep waiting */
-    }
-  }
-
-  // Still queued. Whether that is a problem depends entirely on whether the
-  // agent is alive: outside a scheduled service it polls every ten seconds, so
-  // the very first label of an unscheduled event can legitimately land after
-  // our wait window — and every one after it is instant. An agent that is not
-  // there at all is a different matter and should hold the screen.
-  try {
-    const response = await fetch('/api/print/status', { cache: 'no-store' })
-    const status = await response.json()
-    if (status.online) {
-      setPrintError(null)
-      return setPrintPhase('pending')
-    }
-  } catch {
-    /* fall through to the failure case */
-  }
-
-  setPrintError('프린터 에이전트 응답 없음 — 이름표는 대기열에 남아 있습니다.')
-  setPrintPhase('failed')
-}
-
 function printStatusText(phase: PrintPhase, error: string | null): string {
   switch (phase) {
     case 'idle':
     case 'rendering':
       return '이름표 준비 중…'
-    case 'queued':
-      return '프린터로 보내는 중…'
-    case 'printing':
+    case 'sending':
       return '이름표 인쇄 중…'
     case 'done':
       return '이름표 인쇄 완료'
-    case 'pending':
-      return '이름표가 곧 인쇄됩니다'
     case 'skipped':
       return '인쇄가 꺼져 있습니다'
     case 'failed':
@@ -419,10 +359,6 @@ function printStatusText(phase: PrintPhase, error: string | null): string {
 }
 
 // ---------------------------------------------------------------- helpers
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function formatTime(value: string): string {
   const [h, m] = value.split(':')

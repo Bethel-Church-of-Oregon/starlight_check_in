@@ -145,7 +145,7 @@ export function drawLabel(
 
 /**
  * Renders the label and packs it into the length-prefixed PackBits raster
- * stream that `/api/print/jobs` expects.
+ * stream that `assembleJob` (brother.ts) wraps into a Brother print job.
  *
  * The canvas is `tapeDots` wide and `lengthDots` tall, and the drawing is
  * rotated 90° into it, so every canvas row is already exactly one raster line

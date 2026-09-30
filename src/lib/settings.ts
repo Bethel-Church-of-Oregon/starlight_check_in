@@ -9,8 +9,8 @@ export const DEFAULT_GENERAL: GeneralSettings = {
 }
 
 export const DEFAULT_PRINTER: PrinterSettings = {
-  host: '',
-  port: 9100,
+  bridgeUrl: '',
+  bridgeKey: '',
   mediaWidthMm: 62,
   labelLengthMm: 90,
   copies: 1,
@@ -44,11 +44,27 @@ export async function loadSettings(): Promise<AppSettings> {
   const bag = new Map(rows.map((r) => [r.key, r.value]))
 
   return {
-    general: { ...DEFAULT_GENERAL, ...(bag.get('general') as object | undefined) },
-    printer: { ...DEFAULT_PRINTER, ...(bag.get('printer') as object | undefined) },
-    label: { ...DEFAULT_LABEL, ...(bag.get('label') as object | undefined) },
+    general: known(DEFAULT_GENERAL, bag.get('general')),
+    printer: known(DEFAULT_PRINTER, bag.get('printer')),
+    label: known(DEFAULT_LABEL, bag.get('label')),
     grades: (bag.get('grades') as string[] | undefined) ?? DEFAULT_GRADES,
   }
+}
+
+/**
+ * Defaults overlaid with the stored values — but only for keys the app still
+ * knows about. Settings rows outlive code: a database seeded before the Pi
+ * bridge still has the old `host`/`port` printer keys, and those must not
+ * leak back out through the API.
+ */
+function known<T extends object>(defaults: T, stored: unknown): T {
+  const result = { ...defaults }
+  if (stored && typeof stored === 'object') {
+    for (const key of Object.keys(defaults) as (keyof T)[]) {
+      if (key in stored) result[key] = (stored as T)[key]
+    }
+  }
+  return result
 }
 
 export async function saveSetting(key: string, value: unknown): Promise<void> {

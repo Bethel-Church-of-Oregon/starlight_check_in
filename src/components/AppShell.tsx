@@ -4,15 +4,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useVisiblePolling } from '@/lib/use-visible-polling'
 import { usePathname, useRouter } from 'next/navigation'
 import { useApp } from './app-context'
+import { bridgeConfigured, fetchBridgeStatus, type BridgeStatus } from '@/lib/print-client'
 import { GearIcon, PrinterIcon } from './icons'
 import AdminCodeDialog from './AdminCodeDialog'
-
-interface PrintStatus {
-  online: boolean
-  enabled: boolean
-  configured: boolean
-  counts?: { queued: number; claimed: number; failed: number }
-}
 
 /**
  * The persistent chrome: the title bar with "Start over" and the footer with
@@ -22,19 +16,19 @@ interface PrintStatus {
 export default function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { general, admin, refresh } = useApp()
-  const [status, setStatus] = useState<PrintStatus | null>(null)
+  const { general, admin, refresh, printer } = useApp()
+  const [status, setStatus] = useState<BridgeStatus | null>(null)
   const [codeOpen, setCodeOpen] = useState(false)
 
   // --- printer heartbeat -------------------------------------------------
-  // Only while the screen is awake; see lib/use-visible-polling.
+  // Asks the bridge on the LAN, never the cloud, so a kiosk left on all week
+  // does not keep the database awake. Only while the screen is on.
   useVisiblePolling(async () => {
-    try {
-      const response = await fetch('/api/print/status', { cache: 'no-store' })
-      setStatus(await response.json())
-    } catch {
-      setStatus((previous) => (previous ? { ...previous, online: false } : null))
+    if (!printer.enabled || !bridgeConfigured(printer)) {
+      setStatus(null)
+      return
     }
+    setStatus(await fetchBridgeStatus(printer))
   }, 30000)
 
   useKeepAwake()
@@ -68,7 +62,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     setCodeOpen(true)
   }, [pathname, router])
 
-  const dot = printerDotClass(status)
+  const dot = printerDotClass(status, printer)
 
   return (
     <div className="shell">
@@ -82,7 +76,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <main className="appMain">{children}</main>
 
       <footer className="appFooter">
-        <span className="printerWrap" title={printerTitle(status)}>
+        <span className="printerWrap" title={printerTitle(status, printer)}>
           <PrinterIcon size={20} />
           <span className={`printerDot ${dot}`} />
         </span>
@@ -113,24 +107,28 @@ export default function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
-function printerDotClass(status: PrintStatus | null): string {
+function printerDotClass(
+  status: BridgeStatus | null,
+  printer: { enabled: boolean; bridgeUrl?: string }
+): string {
+  if (!printer.enabled || !bridgeConfigured({ bridgeUrl: printer.bridgeUrl ?? '' })) return 'dotIdle'
   if (!status) return 'dotIdle'
-  if (!status.enabled) return 'dotIdle'
-  if (!status.online) return 'dotOffline'
-  if ((status.counts?.failed ?? 0) > 0) return 'dotBusy'
+  if (!status.bridgeReachable || !status.printerReachable) return 'dotOffline'
+  if (!status.ok) return 'dotBusy'
   return 'dotOnline'
 }
 
-function printerTitle(status: PrintStatus | null): string {
-  if (!status) return 'Printer status unknown'
-  if (!status.enabled) return 'Printing is turned off'
-  if (!status.configured) return 'Printer IP is not set — open Settings'
-  if (!status.online) return 'Print agent offline'
-  const failed = status.counts?.failed ?? 0
-  const queued = status.counts?.queued ?? 0
-  if (failed > 0) return `Printer online — ${failed} failed job(s)`
-  if (queued > 0) return `Printer online — ${queued} in queue`
-  return 'Printer online'
+function printerTitle(
+  status: BridgeStatus | null,
+  printer: { enabled: boolean; bridgeUrl?: string }
+): string {
+  if (!printer.enabled) return '인쇄가 꺼져 있습니다'
+  if (!bridgeConfigured({ bridgeUrl: printer.bridgeUrl ?? '' })) return '브릿지 주소가 없습니다 — 세팅에서 입력'
+  if (!status) return '프린터 상태 확인 중'
+  if (!status.bridgeReachable) return '프린트 브릿지에 연결할 수 없습니다'
+  if (!status.printerReachable) return status.messages[0] ?? '브릿지가 프린터에 연결하지 못했습니다'
+  if (!status.ok) return status.messages.join(' / ') || '프린터 오류'
+  return '프린터 정상'
 }
 
 /**

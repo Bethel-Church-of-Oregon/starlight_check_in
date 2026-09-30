@@ -9,17 +9,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { DEFAULT_GENERAL, DEFAULT_LABEL, DEFAULT_GRADES } from '@/lib/settings'
+import { DEFAULT_GENERAL, DEFAULT_LABEL, DEFAULT_GRADES, DEFAULT_PRINTER } from '@/lib/settings'
 import type { GeneralSettings, LabelSettings, PrinterSettings, Service } from '@/lib/types'
-
-export interface PublicPrinter extends Partial<PrinterSettings> {
-  enabled: boolean
-  mediaWidthMm: number
-  labelLengthMm: number
-  threshold: number
-  copies: number
-  configured?: boolean
-}
 
 interface AppContextValue {
   ready: boolean
@@ -30,7 +21,8 @@ interface AppContextValue {
   label: LabelSettings
   grades: string[]
   services: Service[]
-  printer: PublicPrinter
+  /** Full print settings — the iPad assembles jobs and calls the bridge itself. */
+  printer: PrinterSettings
   refresh: () => Promise<void>
 }
 
@@ -42,14 +34,7 @@ const FALLBACK: Omit<AppContextValue, 'refresh'> = {
   label: DEFAULT_LABEL,
   grades: DEFAULT_GRADES,
   services: [],
-  printer: {
-    enabled: true,
-    mediaWidthMm: 62,
-    labelLengthMm: 90,
-    threshold: 160,
-    copies: 1,
-    configured: false,
-  },
+  printer: DEFAULT_PRINTER,
 }
 
 const AppContext = createContext<AppContextValue>({ ...FALLBACK, refresh: async () => {} })
@@ -73,8 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         printer: { ...FALLBACK.printer, ...data.printer },
       })
     } catch (error) {
-      // The kiosk should still be usable (and still able to queue prints) if
-      // the settings call blips, so fall back to defaults rather than blocking.
+      // The kiosk should still paint if the settings call blips, so fall back
+      // to defaults rather than blocking.
       console.error('could not load settings', error)
       setState((previous) => ({ ...previous, ready: true, degraded: true }))
     }

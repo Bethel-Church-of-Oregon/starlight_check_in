@@ -1,0 +1,10 @@
+{
+  "port": 9443,
+  "certFile": "certs/bridge.crt",
+  "keyFile": "certs/bridge.key",
+  "key": "앱 설정 화면의 '브릿지 키'와 같은 값",
+  "allowedOrigins": ["https://your-app.vercel.app", "http://localhost:4900"],
+  "printerHost": "192.168.1.50",
+  "printerPort": 9100,
+  "preflightStatus": true
+}

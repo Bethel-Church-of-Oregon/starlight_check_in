@@ -111,41 +111,10 @@ create table if not exists app_settings (
 );
 
 -- --------------------------------------------------------------------------
--- print_jobs — `data` is a base64 Brother raster command stream, ready to be
--- written straight to the printer's port 9100. The LAN agent never has to
--- understand the protocol.
+-- Retired: the cloud print queue.
+-- Printing now goes iPad → Raspberry Pi bridge on the LAN directly. These two
+-- tables only ever held in-flight label bytes and agent heartbeats, and the
+-- polling that used them kept Neon's compute awake around the clock.
 -- --------------------------------------------------------------------------
-create table if not exists print_jobs (
-  id           uuid primary key default gen_random_uuid(),
-  kind         text not null default 'label',   -- label | test | reprint
-  check_in_id  uuid references check_ins (id) on delete set null,
-  label        text,                            -- human-readable description
-  data         text not null,
-  byte_length  int not null default 0,
-  status       text not null default 'queued',  -- queued | claimed | done | error | canceled
-  attempts     int not null default 0,
-  agent_id     text,
-  error        text,
-  created_at   timestamptz not null default now(),
-  claimed_at   timestamptz,
-  completed_at timestamptz
-);
-
--- Set when a job fails, so a paper-out condition does not burn all three
--- attempts in the same second — the volunteer needs time to load a new roll.
-alter table print_jobs add column if not exists retry_after timestamptz;
-
-create index if not exists print_jobs_queue on print_jobs (status, retry_after, created_at);
-create index if not exists print_jobs_recent on print_jobs (created_at desc);
-
--- --------------------------------------------------------------------------
--- print_agents — heartbeat so the footer printer icon can show online/offline
--- --------------------------------------------------------------------------
-create table if not exists print_agents (
-  id           text primary key,
-  name         text,
-  printer_host text,
-  version      text,
-  last_seen_at timestamptz not null default now(),
-  last_error   text
-);
+drop table if exists print_jobs;
+drop table if exists print_agents;

@@ -109,13 +109,8 @@ export async function POST(request: NextRequest) {
     alreadyCheckedIn,
     labelPayload,
     label: settings.label,
-    print: {
-      enabled: settings.printer.enabled,
-      configured: Boolean(settings.printer.host),
-      mediaWidthMm: settings.printer.mediaWidthMm,
-      labelLengthMm: settings.printer.labelLengthMm,
-      threshold: settings.printer.threshold,
-    },
+    // Everything the iPad needs to assemble the Brother job and reach the bridge.
+    printer: settings.printer,
     timezone: settings.general.timezone,
     autoReturnSeconds: settings.general.autoReturnSeconds,
   })

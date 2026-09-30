@@ -55,8 +55,8 @@ const DEFAULT_SETTINGS = {
     autoReturnSeconds: 5,
   },
   printer: {
-    host: '',
-    port: 9100,
+    bridgeUrl: '',
+    bridgeKey: '',
     mediaWidthMm: 62,
     labelLengthMm: 90,
     copies: 1,

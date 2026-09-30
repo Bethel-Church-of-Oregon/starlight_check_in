@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PrinterIcon, RefreshIcon } from '@/components/icons'
-import { renderLabelPreview, renderLabelStream, waitForFonts } from '@/lib/label'
-import { base64FromBytes } from '@/lib/raster'
+import { renderLabelPreview, waitForFonts } from '@/lib/label'
+import {
+  bridgeConfigured,
+  buildLabelJob,
+  fetchBridgeStatus,
+  sendToBridge,
+  type BridgeStatus,
+} from '@/lib/print-client'
 import type { LabelPayload, LabelSettings, PrinterSettings } from '@/lib/types'
 import { useVisiblePolling } from '@/lib/use-visible-polling'
-import { Notice, Panel, Stat, Toggle, formatDateTime } from './shared'
+import { Notice, Panel, Stat, Toggle } from './shared'
 
 const SAMPLE: LabelPayload = {
   koreanName: '김민준',
@@ -18,32 +24,6 @@ const SAMPLE: LabelPayload = {
 }
 
 const MEDIA_WIDTHS = [62, 54, 50, 38, 29]
-
-interface Status {
-  online: boolean
-  enabled: boolean
-  configured: boolean
-  agents: {
-    id: string
-    name: string | null
-    printer_host: string | null
-    version: string | null
-    last_seen_at: string
-    last_error: string | null
-    online: boolean
-  }[]
-  counts: { queued: number; claimed: number; failed: number }
-  recent: {
-    id: string
-    kind: string
-    label: string | null
-    status: string
-    attempts: number
-    error: string | null
-    created_at: string
-    completed_at: string | null
-  }[]
-}
 
 export default function PrinterPanel({
   printer,
@@ -60,20 +40,22 @@ export default function PrinterPanel({
   const [labelDraft, setLabelDraft] = useState<LabelSettings>(label)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error' | 'warn'; text: string } | null>(null)
-  const [status, setStatus] = useState<Status | null>(null)
+  const [status, setStatus] = useState<BridgeStatus | null>(null)
+  const [testing, setTesting] = useState(false)
   const [preview, setPreview] = useState<string>('')
 
   useEffect(() => setDraft(printer), [printer])
   useEffect(() => setLabelDraft(label), [label])
 
+  // Status comes from the bridge on the LAN, using the *saved* address — the
+  // draft may be half-typed.
   const loadStatus = useCallback(async () => {
-    try {
-      const response = await fetch('/api/print/status', { cache: 'no-store' })
-      setStatus(await response.json())
-    } catch {
-      /* the panel is still usable without it */
+    if (!bridgeConfigured(printer)) {
+      setStatus(null)
+      return
     }
-  }, [])
+    setStatus(await fetchBridgeStatus(printer))
+  }, [printer])
 
   useVisiblePolling(loadStatus, 10000)
 
@@ -129,42 +111,22 @@ export default function PrinterPanel({
       setMessage({ kind: 'warn', text: '먼저 저장한 뒤 테스트 인쇄를 실행해 주세요.' })
       return
     }
+    setTesting(true)
     try {
-      await waitForFonts()
-      const { stream, rasterCount } = renderLabelStream({
+      const job = await buildLabelJob({
         payload: { ...SAMPLE, checkedInAt: new Date().toISOString() },
         label: labelDraft,
+        printer: { ...printer, copies: 1 },
         timezone,
-        mediaWidthMm: draft.mediaWidthMm,
-        labelLengthMm: draft.labelLengthMm,
-        threshold: draft.threshold,
       })
-      const response = await fetch('/api/print/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stream: base64FromBytes(stream),
-          rasterCount,
-          kind: 'test',
-          label: 'Test print',
-          copies: 1,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? '테스트 인쇄 실패')
-      setMessage({
-        kind: 'ok',
-        text: `테스트 라벨을 대기열에 넣었습니다 (${(data.bytes / 1024).toFixed(1)} KB).`,
-      })
-      void loadStatus()
+      await sendToBridge(printer, job, 'Test print')
+      setMessage({ kind: 'ok', text: `테스트 라벨을 인쇄했습니다 (${(job.length / 1024).toFixed(1)} KB).` })
     } catch (error) {
       setMessage({ kind: 'error', text: error instanceof Error ? error.message : '테스트 인쇄 실패' })
+    } finally {
+      setTesting(false)
+      void loadStatus()
     }
-  }
-
-  const queueAction = async (action: 'requeue' | 'clear') => {
-    await fetch(`/api/print/jobs?action=${action}`, { method: 'PATCH' })
-    void loadStatus()
   }
 
   const set = <K extends keyof PrinterSettings>(key: K, value: PrinterSettings[K]) =>
@@ -183,8 +145,8 @@ export default function PrinterPanel({
         }
         footer={
           <>
-            <button type="button" className="btn" onClick={() => void testPrint()}>
-              <PrinterIcon size={16} /> 테스트 인쇄
+            <button type="button" className="btn" onClick={() => void testPrint()} disabled={testing}>
+              {testing ? <span className="spinner" /> : <PrinterIcon size={16} />} 테스트 인쇄
             </button>
             <button type="button" className="btn btnPrimary" onClick={() => void save()} disabled={!dirty || saving}>
               {saving ? <span className="spinner" /> : dirty ? '변경사항 저장' : '저장됨'}
@@ -194,50 +156,73 @@ export default function PrinterPanel({
       >
         {message && <Notice kind={message.kind}>{message.text}</Notice>}
 
-        {status && !status.online && status.enabled && (
+        {!bridgeConfigured(printer) && (
           <Notice kind="warn">
-            프린트 에이전트가 응답하지 않습니다. 교회 PC에서 <code>npm run agent</code> 가 실행 중인지
-            확인해 주세요. 그동안의 인쇄 작업은 대기열에 보관됩니다.
+            프린트 브릿지 주소가 비어 있습니다. 라즈베리파이 브릿지 주소를 입력하고 저장해 주세요.
           </Notice>
         )}
-        {status && status.online && !draft.host && (
+        {status && !status.bridgeReachable && (
           <Notice kind="warn">
-            에이전트는 연결되었지만 프린터 IP가 비어 있습니다. QL-820NWBc의 IP를 입력해 주세요.
+            브릿지에 연결할 수 없습니다. 라즈베리파이가 켜져 있는지, 이 기기가 같은 와이파이에
+            있는지 확인해 주세요. 아이패드라면 Safari에서 브릿지 주소를 직접 열어 인증서 경고가
+            뜨지 않는지도 확인해 주세요.
           </Notice>
+        )}
+        {status && status.bridgeReachable && !status.ok && status.messages.length > 0 && (
+          <Notice kind="error">{status.messages.join(' / ')}</Notice>
         )}
 
         <div className="statRow" style={{ margin: '14px 0 20px' }}>
-          <Stat value={status?.online ? '연결됨' : '끊김'} label="에이전트" />
-          <Stat value={status?.counts.queued ?? 0} label="대기 중" />
-          <Stat value={status?.counts.claimed ?? 0} label="인쇄 중" />
-          <Stat value={status?.counts.failed ?? 0} label="실패" />
+          <Stat value={status?.bridgeReachable ? '연결됨' : '끊김'} label="브릿지" />
+          <Stat value={status?.printerReachable ? (status.ok ? '정상' : '오류') : '—'} label="프린터" />
+          <Stat
+            value={status?.mediaWidthMm ? `${status.mediaWidthMm} mm` : '—'}
+            label="들어있는 용지"
+          />
+          <Stat value={status?.printerHost || '—'} label="프린터 IP (브릿지 설정)" />
         </div>
 
-        <h3 className="sectionTitle">연결</h3>
+        {status?.mediaWidthMm !== undefined &&
+          status.mediaWidthMm > 0 &&
+          status.mediaWidthMm !== draft.mediaWidthMm && (
+            <Notice kind="warn">
+              프린터에 {status.mediaWidthMm} mm 용지가 들어 있는데 설정은 {draft.mediaWidthMm} mm
+              입니다. 아래 테이프 폭을 맞춰 주세요.
+            </Notice>
+          )}
+
+        <h3 className="sectionTitle">브릿지 연결</h3>
         <div className="fieldGrid">
           <div className="field">
-            <label htmlFor="host">프린터 IP 주소</label>
+            <label htmlFor="bridgeUrl">브릿지 주소</label>
             <input
-              id="host"
-              value={draft.host}
-              onChange={(event) => set('host', event.target.value)}
-              placeholder="192.168.1.50"
-              inputMode="decimal"
+              id="bridgeUrl"
+              value={draft.bridgeUrl}
+              onChange={(event) => set('bridgeUrl', event.target.value)}
+              placeholder="https://192.168.1.60:9443"
+              inputMode="url"
               autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
-            <span className="fieldHint">QL-820NWBc 본체에서 [메뉴 → WLAN/유선 LAN → IP 주소]</span>
+            <span className="fieldHint">라즈베리파이의 고정 IP와 포트. 반드시 https 입니다.</span>
           </div>
           <div className="field">
-            <label htmlFor="port">포트</label>
+            <label htmlFor="bridgeKey">브릿지 키</label>
             <input
-              id="port"
-              type="number"
-              value={draft.port}
-              onChange={(event) => set('port', Number(event.target.value))}
+              id="bridgeKey"
+              value={draft.bridgeKey}
+              onChange={(event) => set('bridgeKey', event.target.value)}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
-            <span className="fieldHint">Brother raw 포트는 9100 입니다</span>
+            <span className="fieldHint">브릿지 config.json 의 key 와 같은 값</span>
           </div>
         </div>
+        <p className="fieldHint" style={{ marginTop: 8 }}>
+          프린터 IP는 라즈베리파이의 <code>bridge/config.json</code> 에서 설정합니다.
+        </p>
 
         <h3 className="sectionTitle" style={{ marginTop: 22 }}>
           용지 / 인쇄
@@ -346,89 +331,6 @@ export default function PrinterPanel({
         </div>
       </Panel>
 
-      <Panel
-        title="인쇄 대기열"
-        footer={
-          <>
-            <button type="button" className="btn" onClick={() => void queueAction('requeue')}>
-              실패한 작업 재시도
-            </button>
-            <button type="button" className="btn btnDanger" onClick={() => void queueAction('clear')}>
-              대기열 비우기
-            </button>
-          </>
-        }
-      >
-        {(status?.agents.length ?? 0) > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            {status!.agents.map((agent) => (
-              <div key={agent.id} className="toggleRow">
-                <span>
-                  <span style={{ fontWeight: 500 }}>
-                    {agent.name || agent.id}{' '}
-                    <span className={`chip ${agent.online ? 'chipGreen' : 'chipWarn'}`}>
-                      {agent.online ? 'online' : 'offline'}
-                    </span>
-                  </span>
-                  <span className="fieldHint" style={{ display: 'block' }}>
-                    {agent.printer_host ?? '주소 미보고'} · v{agent.version ?? '?'} ·{' '}
-                    {formatDateTime(agent.last_seen_at, timezone)}
-                    {agent.last_error ? ` · ${agent.last_error}` : ''}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="tableScroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>작업</th>
-                <th>상태</th>
-                <th>시각</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(status?.recent ?? []).map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    {job.label || job.kind}
-                    {job.error && (
-                      <span className="fieldHint" style={{ display: 'block', color: 'var(--red)' }}>
-                        {job.error}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span
-                      className={`chip ${
-                        job.status === 'done'
-                          ? 'chipGreen'
-                          : job.status === 'error'
-                            ? 'chipWarn'
-                            : 'chipBlue'
-                      }`}
-                    >
-                      {job.status}
-                      {job.attempts > 1 ? ` ×${job.attempts}` : ''}
-                    </span>
-                  </td>
-                  <td>{formatDateTime(job.completed_at ?? job.created_at, timezone)}</td>
-                </tr>
-              ))}
-              {(status?.recent.length ?? 0) === 0 && (
-                <tr>
-                  <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 22 }}>
-                    인쇄 기록이 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
     </>
   )
 }

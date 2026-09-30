@@ -11,10 +11,10 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/migrate.mjs --seed",
     "icons": "node scripts/gen-icons.mjs",
-    "agent": "node print-agent/agent.mjs",
-    "test": "tsc src/lib/raster.ts src/lib/brother.ts src/lib/label.ts src/lib/poll-interval.ts --outDir .tmp-test --module commonjs --target es2022 --moduleResolution node --lib dom,es2022 --skipLibCheck && node tests/raster.test.cjs && node tests/label.test.cjs && node tests/poll-interval.test.cjs",
+    "test": "tsc src/lib/raster.ts src/lib/brother.ts src/lib/label.ts --outDir .tmp-test --module commonjs --target es2022 --moduleResolution node --lib dom,es2022 --skipLibCheck && node tests/raster.test.cjs && node tests/label.test.cjs",
     "db:proxy": "node scripts/neon-http-proxy.mjs",
-    "test:sql": "node tests/sql.test.mjs"
+    "test:sql": "node tests/sql.test.mjs",
+    "bridge": "node bridge/bridge.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

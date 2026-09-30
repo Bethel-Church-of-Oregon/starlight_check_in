@@ -14,8 +14,10 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET is public because every screen needs the church name, grade list,
- * services and label geometry. The printer's IP address is only included for
- * an authenticated admin session.
+ * services, label geometry — and, now that the iPad prints straight to the
+ * LAN bridge, the full print settings including the bridge address and key.
+ * Neither is a secret: the key only stops other devices on the church Wi-Fi
+ * from printing, and the printer's own IP lives on the bridge, not here.
  */
 export async function GET() {
   const admin = await hasAdminSession().catch(() => false)
@@ -42,14 +44,7 @@ export async function GET() {
       grades: DEFAULT_GRADES,
       services: [],
       admin: false,
-      printer: {
-        enabled: DEFAULT_PRINTER.enabled,
-        mediaWidthMm: DEFAULT_PRINTER.mediaWidthMm,
-        labelLengthMm: DEFAULT_PRINTER.labelLengthMm,
-        threshold: DEFAULT_PRINTER.threshold,
-        copies: DEFAULT_PRINTER.copies,
-        configured: false,
-      },
+      printer: DEFAULT_PRINTER,
     })
   }
 
@@ -60,16 +55,7 @@ export async function GET() {
     grades: settings.grades,
     services,
     admin,
-    printer: admin
-      ? settings.printer
-      : {
-          enabled: settings.printer.enabled,
-          mediaWidthMm: settings.printer.mediaWidthMm,
-          labelLengthMm: settings.printer.labelLengthMm,
-          threshold: settings.printer.threshold,
-          copies: settings.printer.copies,
-          configured: Boolean(settings.printer.host),
-        },
+    printer: settings.printer,
   })
 }
 
@@ -100,10 +86,24 @@ export async function PATCH(request: NextRequest) {
 
   if (body.printer) {
     const incoming = body.printer as Record<string, unknown>
+    if (typeof incoming.bridgeUrl === 'string' && incoming.bridgeUrl.trim() !== '') {
+      let parsed: URL | null = null
+      try {
+        parsed = new URL(incoming.bridgeUrl.trim())
+      } catch {
+        parsed = null
+      }
+      if (!parsed || !['https:', 'http:'].includes(parsed.protocol)) {
+        return Response.json(
+          { error: '브릿지 주소는 https://192.168.1.60:9443 같은 형식이어야 합니다.' },
+          { status: 400 }
+        )
+      }
+    }
     await saveSetting('printer', {
       ...current.printer,
-      host: str(incoming.host, current.printer.host).trim(),
-      port: num(incoming.port, current.printer.port, 1, 65535),
+      bridgeUrl: str(incoming.bridgeUrl, current.printer.bridgeUrl).trim().replace(/\/+$/, ''),
+      bridgeKey: str(incoming.bridgeKey, current.printer.bridgeKey).trim(),
       mediaWidthMm: num(incoming.mediaWidthMm, current.printer.mediaWidthMm, 12, 62),
       labelLengthMm: num(incoming.labelLengthMm, current.printer.labelLengthMm, 20, 300),
       copies: num(incoming.copies, current.printer.copies, 1, 5),

@@ -6,6 +6,7 @@
 - **프론트엔드/백엔드**: Next.js 15 (App Router), Vercel 배포
 - **데이터베이스**: Neon PostgreSQL
 - **프린터**: Brother QL-820NWBc (이더넷/Wi-Fi, raw 9100 포트)
+- **프린트 브릿지**: 같은 네트워크의 라즈베리파이 — [bridge/README.md](bridge/README.md)
 - **아이패드**: 홈 화면에 추가하면 PWA로 전체화면 실행
 
 ---
@@ -20,72 +21,48 @@
 | 세팅 | `/settings` | 오른쪽 아래 톱니바퀴 → 코드 입력 → 진입. 오늘 현황 / 학생 명단 / 프린터 / 통계 / 일반 |
 
 오른쪽 위 **Start over** 와 오른쪽 아래 **톱니바퀴**는 모든 화면에 항상 표시됩니다.
-톱니바퀴 왼쪽의 프린터 아이콘에는 상태 점이 붙습니다 — 초록(정상), 빨강(에이전트
-끊김), 주황(실패한 작업 있음), 회색(인쇄 꺼짐).
+톱니바퀴 왼쪽의 프린터 아이콘에는 상태 점이 붙습니다 — 초록(정상), 빨강(브릿지나
+프린터에 연결 안 됨), 주황(용지 없음·커버 열림 등), 회색(인쇄 꺼짐 또는 브릿지 미설정).
 
 Planning Center의 **household(가족) 개념은 쓰지 않습니다.** 모든 것이 학생 한 명
 단위(person)입니다.
 
 ---
 
-## 2. 왜 프린트 에이전트가 필요한가
-
-아이패드는 HTTPS로 Vercel에서 앱을 받아옵니다. Safari는 HTTPS 페이지가 평문 HTTP
-LAN 주소(`http://192.168.x.x`)로 연결하는 것을 차단하므로, **아이패드가 프린터에
-직접 요청할 수 없습니다.**
-
-그래서 방향을 뒤집었습니다.
+## 2. 인쇄 구조
 
 ```
-아이패드 (Safari, HTTPS)
-  │  1. 라벨을 Canvas에 300dpi로 그림 (한글 폰트는 브라우저가 가장 잘 처리)
-  │  2. 1비트 비트맵 → PackBits 압축
+아이패드 (Safari)
+  │  1. Check in 버튼 → 서버에 체크인 기록 (Neon)
+  │  2. 이름표를 Canvas에 300dpi로 그림 (한글 폰트는 브라우저가 가장 잘 처리)
+  │  3. 1비트 래스터 → PackBits 압축 → Brother 인쇄 명령까지 조립
+  │
+  │  HTTPS, 같은 와이파이 안에서
   ▼
-Vercel (Next.js)
-  │  3. Brother 래스터 커맨드 스트림으로 조립
-  ▼
-Neon Postgres  ── print_jobs 큐
-  ▲
-  │  4. 1초마다 폴링해서 잡을 가져감
-교회 LAN의 프린트 에이전트 (Node, 의존성 0개)
+라즈베리파이 프린트 브릿지 (Node, 의존성 0개)
+  │  4. 프린터 상태 확인 (용지 없음·커버 열림이면 바로 알려줌)
   │  5. 받은 바이트를 그대로 9100 포트에 write
   ▼
 Brother QL-820NWBc
 ```
 
-이 구조의 장점:
+- **클라우드를 거치지 않습니다.** 인쇄 데이터는 교회 네트워크 밖으로 나가지 않고,
+  체크인 버튼부터 이름표가 나오기까지 보통 1~2초입니다.
+- **결과를 바로 압니다.** 용지가 떨어졌으면 확인 화면에 그 이유가 뜨고 **다시 인쇄**
+  버튼이 나옵니다. 이름표가 실제로 나온 뒤에야 처음 화면으로 돌아갑니다.
+- **브릿지는 바이트를 넘기기만 합니다.** 라벨 모양이나 인쇄 설정을 바꿔도 파이는
+  건드릴 필요가 없습니다. `brother.ts` 는 브라우저에서도 도는 순수 코드라
+  명령 조립은 아이패드가 합니다.
+- **DB는 누가 체크인할 때만 깨어납니다.** 폴링하는 곳이 없어서, 일주일 내내 켜져
+  있는 키오스크도 DB를 깨우지 않습니다. 프린터 상태 확인도 LAN 안의 브릿지에만
+  묻습니다. Neon 무료 플랜은 쿼리가 5분 없으면 절전하고 월 100 CU-시간만
+  주는데, 이 구조에서는 체크인하는 시간만 쓰입니다.
 
-- 아이패드는 프린터와 같은 네트워크에 있지 않아도 됩니다.
-- 에이전트가 꺼져 있어도 체크인은 정상 동작하고, 인쇄 작업은 큐에 남아 에이전트가
-  돌아오면 인쇄됩니다.
-- 프린터 IP는 세팅 화면에서 바꿉니다. 에이전트가 폴링할 때마다 서버에서 받아가므로
-  교회 PC를 만질 필요가 없습니다.
-- 에이전트는 소켓에 바이트를 붓는 것 말고 아무것도 하지 않습니다. 라벨 모양이나
-  인쇄 설정을 바꿔도 에이전트를 업데이트할 일이 없습니다.
-
-### 폴링 주기는 서버가 정합니다
-
-에이전트를 1초마다 폴링시키면 하루 86,400 요청입니다. 교회는 주당 세 시간 쓰는데
-24시간 폴링하는 셈이고, 이 숫자는 무료 호스팅 한도를 그냥 넘습니다.
-
-그래서 `/api/print/next` 응답이 **다음 폴링 간격까지 같이 알려줍니다**
-([`src/lib/poll-interval.ts`](src/lib/poll-interval.ts)):
-
-| 상황 | 간격 |
-|---|---|
-| 예배 시작 20분 전 ~ 90분 후 | **1초** |
-| 최근 10분 안에 체크인이나 인쇄가 있었음 | **1초** |
-| 그 외 | 10초 |
-
-예배 시간대에 미리 빨라지는 게 핵심입니다 — 그래서 그날 첫 가족의 이름표도 즉시
-나옵니다. 회차에 없는 수요일 행사는 첫 라벨만 최대 10초 기다리고, 그 뒤로는
-"최근 활동" 조건이 걸려 전부 즉시 인쇄됩니다.
-
-주일 2부(9:30 / 11:00) 기준 하루 **19,494 요청** — 고정 1초 폴링의 4.4분의 1입니다.
-
-앱 쪽 폴링(프린터 상태, 오늘 현황)도 [`useVisiblePolling`](src/lib/use-visible-polling.ts)
-을 거쳐 **화면이 꺼져 있으면 아예 멈춥니다.** 벽에 걸린 아이패드가 일주일 내내
-잠든 화면을 폴링할 이유가 없습니다.
+**브릿지가 HTTPS여야 하는 이유:** 아이패드는 앱을 HTTPS로 받아오고, Safari는
+HTTPS 페이지가 `http://192.168.x.x` 로 요청하는 것을 막습니다(mixed content).
+그래서 파이는 아이패드가 신뢰하는 인증서가 있어야 합니다. 교회 도메인으로
+Let's Encrypt 인증서를 받거나, 도메인이 없으면 자체 인증서를 아이패드에 한 번
+설치합니다. 절차는 [bridge/README.md](bridge/README.md) 4번에 있습니다.
 
 ---
 
@@ -93,14 +70,16 @@ Brother QL-820NWBc
 
 ### 3-1. Neon 데이터베이스
 
-1. [neon.tech](https://neon.tech) 에서 프로젝트를 만듭니다.
-2. **Connection Details → Pooled connection** 문자열을 복사합니다.
+1. [neon.tech](https://neon.tech) 에서 프로젝트를 만듭니다. Region은
+   **AWS US West 2 (Oregon)** 이 가장 가깝습니다.
+2. 프로젝트 대시보드 → **Connect** → **Connection pooling** 켜기 → 문자열 복사.
+   호스트에 `-pooler` 가 들어 있으면 맞습니다.
 
 ```bash
 cp .env.example .env.local
-# DATABASE_URL 을 붙여넣고, 아래 두 값을 생성해서 채웁니다
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # PRINT_AGENT_TOKEN
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # ADMIN_SESSION_SECRET
+# DATABASE_URL 을 붙여넣고, ADMIN_SESSION_SECRET 을 생성해서 채웁니다
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+git check-ignore .env.local     # ".env.local" 이 출력되면 git에 안 올라갑니다
 ```
 
 ```bash
@@ -121,7 +100,6 @@ npm run db:seed         # 위 + 데모 학생 7명 (원하면)
 ```bash
 npx vercel link
 npx vercel env add DATABASE_URL production
-npx vercel env add PRINT_AGENT_TOKEN production
 npx vercel env add ADMIN_SESSION_SECRET production
 npx vercel --prod
 ```
@@ -137,99 +115,27 @@ QL-820NWBc 는 QL-820NWB 의 후속 리비전입니다. Brother는 두 모델을
 1. 프린터 본체에서 **[메뉴] → [WLAN] 또는 [유선 LAN] → [IP 주소]** 를 확인합니다.
    고정 IP나 DHCP 예약을 걸어두는 것을 강력히 권합니다 — IP가 바뀌면 인쇄가 멈춥니다.
 2. 62 mm 연속 용지(DK-2205)를 넣습니다.
-3. 앱 세팅 화면 → **프린터** 탭에서 IP를 입력하고 저장합니다.
+3. 이 IP를 라즈베리파이 브릿지의 `config.json` 에 넣습니다 (다음 절).
 
 > 62 mm 이외 폭(54/50/38/29 mm)도 선택할 수 있습니다.
 > QL-800/810W 도 같은 래스터 프로토콜이라 동작하지만, QL-800은 USB 전용이라
 > USB-이더넷 프린트 서버가 별도로 필요합니다.
 
-### 3-4. 프린트 에이전트
+### 3-4. 라즈베리파이 프린트 브릿지
 
-프린터와 같은 네트워크에 있는, 항상 켜져 있는 PC/맥/라즈베리파이에 설치합니다.
+[bridge/README.md](bridge/README.md) 를 따라 설치합니다. 요약하면:
 
-```bash
-# 이 저장소를 받아서
-cd print-agent
-cp config.example.json config.json
-# config.json 을 채우고
-node agent.mjs
-```
-
-또는 환경변수로:
-
-```bash
-APP_URL=https://your-app.vercel.app \
-PRINT_AGENT_TOKEN=<앱과 같은 값> \
-PRINTER_HOST=192.168.1.50 \
-node print-agent/agent.mjs
-```
-
-설치 확인:
-
-```bash
-PRINTER_HOST=192.168.1.50 node print-agent/agent.mjs --status
-#   용지: 62 mm continuous
-#   상태: 정상
-```
-
-**항상 실행되게 등록하기**
-
-<details>
-<summary>Linux / 라즈베리파이 (systemd)</summary>
-
-`/etc/systemd/system/starlight-print.service`:
-
-```ini
-[Unit]
-Description=Bethel Starlight print agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/starlight_checkin
-ExecStart=/usr/bin/node print-agent/agent.mjs
-Environment=APP_URL=https://your-app.vercel.app
-Environment=PRINT_AGENT_TOKEN=xxxxx
-Environment=PRINTER_HOST=192.168.1.50
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now starlight-print
-journalctl -u starlight-print -f
-```
-</details>
-
-<details>
-<summary>macOS (launchd)</summary>
-
-`~/Library/LaunchAgents/org.bethel.starlight-print.plist` 에 `ProgramArguments` 로
-`/usr/local/bin/node`, `/path/to/print-agent/agent.mjs` 를 넣고
-`EnvironmentVariables` 에 `APP_URL` / `PRINT_AGENT_TOKEN` / `PRINTER_HOST` 를 설정한 뒤:
-
-```bash
-launchctl load -w ~/Library/LaunchAgents/org.bethel.starlight-print.plist
-```
-</details>
-
-<details>
-<summary>Windows</summary>
-
-작업 스케줄러에서 "컴퓨터 시작 시" 트리거로
-`node C:\starlight_checkin\print-agent\agent.mjs` 를 등록하고,
-"사용자가 로그온하지 않아도 실행" 을 선택합니다. 환경변수는 시스템 변수로 넣거나
-`config.json` 을 사용하세요.
-</details>
+1. 파이에 고정 IP를 주고 Node 20 설치
+2. `bridge/` 폴더를 파이에 복사
+3. HTTPS 인증서 — 교회 도메인 + Let's Encrypt, 또는 `make-cert.sh` + 아이패드에 CA 설치
+4. `config.json` 에 프린터 IP와 브릿지 키
+5. systemd 서비스로 등록
+6. 앱 세팅 → 프린터 탭에 **브릿지 주소**와 **브릿지 키** 입력 → 테스트 인쇄
 
 ### 3-5. 아이패드
 
 1. Safari로 배포된 주소를 엽니다 (**HTTPS 필수** — PWA 설치 조건입니다).
+   아이패드가 **브릿지와 같은 와이파이**에 있어야 인쇄됩니다.
 2. 공유 버튼 → **홈 화면에 추가**.
 3. 홈 화면 아이콘으로 실행하면 주소창 없는 전체화면으로 열립니다.
 4. 권장 설정: **설정 → 디스플레이 및 밝기 → 자동 잠금 → 안 함**,
@@ -275,9 +181,9 @@ launchctl load -w ~/Library/LaunchAgents/org.bethel.starlight-print.plist
   날짜를 바꿔 지난 주도 볼 수 있습니다.
 - **학생 명단** — 이름/전화/바코드 검색, 학년 필터, 정보 수정, 비활성화 및 완전 삭제.
   비활성화(기본)는 출석 기록을 남기고 검색에서만 감춥니다.
-- **프린터** — IP/포트, 용지 폭, 라벨 길이, 장수, 임계값, 커팅, 180° 회전,
-  라벨 내용 토글, **실시간 미리보기**, **테스트 인쇄**, 에이전트 상태, 인쇄 대기열,
-  실패 작업 재시도, 대기열 비우기.
+- **프린터** — 브릿지 주소/키, 브릿지·프린터 실시간 상태(들어 있는 용지 폭 포함,
+  설정과 다르면 경고), 용지 폭, 라벨 길이, 장수, 임계값, 커팅, 180° 회전,
+  라벨 내용 토글, **실시간 미리보기**, **테스트 인쇄**.
 - **통계** — 기간별 세션 인원 막대그래프, 학년별/회차별 집계, 학생별 출석 횟수와
   마지막 출석일(미참석 학생 포함).
 - **일반** — 화면 제목, 장소 이름, 시간대, 체크인 후 대기 시간, 학년 목록,
@@ -290,12 +196,13 @@ launchctl load -w ~/Library/LaunchAgents/org.bethel.starlight-print.plist
 ```bash
 npm run dev          # http://localhost:4900
 npm run build
-npm test             # 래스터 + 라벨 비트 패킹 + 폴링 주기 (32개)
+npm test             # 래스터 + 라벨 비트 패킹 (22개)
 ```
 
 로컬 포트는 **4900** 으로 고정해 두었습니다 (`package.json` 의 `dev` / `start`).
 3000 · 5000 · 5001 · 8000 은 다른 프로젝트와 부딪히므로 쓰지 않습니다. 개발용
-Neon 프록시는 **54320**, e2e 테스트의 가짜 프린터는 **19100** 을 씁니다.
+Neon 프록시는 **54320**, 테스트용 가짜 프린터는 **19100 · 19110**, 테스트용 브릿지는
+**19443 · 19444** 를 씁니다. 실제 브릿지는 파이에서 **9443** 입니다.
 
 ### 로컬 Postgres로 개발하기
 
@@ -319,22 +226,33 @@ PROXY_DATABASE_URL="postgresql://postgres:dev@localhost:55432/starlight" npm run
 DATABASE_URL="postgresql://postgres:dev@ep-local-pooler.aws.neon.tech/starlight?sslmode=require" \
 NEON_FETCH_ENDPOINT="http://localhost:54320/sql" \
 ADMIN_SESSION_SECRET="dev-admin-secret-for-local-testing" \
-PRINT_AGENT_TOKEN="dev-agent-token-for-local-testing" \
   npm run dev
 ```
 
 `NEON_FETCH_ENDPOINT` 는 `NODE_ENV=production` 에서 무시됩니다.
 
+**브릿지까지 로컬에서:** 인증서 없이 실행하면 HTTP로 뜹니다. `http://localhost:4900`
+에서 연 앱은 HTTP 브릿지를 호출할 수 있으므로, 세팅에 `http://<이 PC IP>:9443` 을
+넣으면 실제 프린터로 개발할 수 있습니다.
+
+```bash
+PRINTER_HOST=192.168.1.50 BRIDGE_KEY=dev npm run bridge
+```
+
 ### 테스트
 
 | 명령 | 내용 |
 |---|---|
-| `npm test` | Brother 래스터 커맨드 조립, PackBits, 라벨 비트 패킹, 폴링 주기 산정 (32) |
-| `npm run test:sql` | 라우트가 실제로 쓰는 SQL을 진짜 Postgres에 실행 (27) |
-| `node tests/e2e.test.mjs` | 가짜 QL-820NWB를 띄우고 실제 API + 실제 에이전트로 전 구간 (37) |
+| `npm test` | Brother 래스터 커맨드 조립, PackBits, 라벨 비트 패킹 (22) |
+| `node tests/bridge.test.mjs` | 실제 브릿지 프로세스 + 가짜 프린터. HTTPS·CORS·동시 인쇄·용지 없음 (18) |
+| `npm run test:sql` | 라우트가 실제로 쓰는 SQL을 진짜 Postgres에 실행 (20) |
+| `node tests/e2e.test.mjs` | 앱 API → 아이패드와 같은 코드로 작업 조립 → 브릿지 → 가짜 프린터 (29) |
 
 ```bash
-# SQL 테스트
+# 브릿지 (DB·앱 없이 단독)
+npm test && node tests/bridge.test.mjs
+
+# SQL
 DATABASE_URL="postgresql://postgres:dev@localhost:55432/starlight?sslmode=disable" \
   npm run test:sql
 
@@ -342,10 +260,9 @@ DATABASE_URL="postgresql://postgres:dev@localhost:55432/starlight?sslmode=disabl
 npm test && node tests/e2e.test.mjs
 ```
 
-e2e 테스트는 QL-820NWB 역할을 하는 TCP 서버를 띄워, 실제 프린터에 도달한 바이트가
-올바른 Brother 래스터 잡인지(200바이트 무효화 프리앰블, `ESC @`, `ESC i a 1`,
-`ESC i z` 헤더의 래스터 줄 수, PackBits 모드, 래스터 커맨드 개수, 끝의 `0x1A`)
-검사하고, 용지 없음·프린터 무응답 같은 실패도 재현합니다.
+브릿지 테스트는 `make-cert.sh` 로 실제 인증서를 발급해 HTTPS 모드도 검증하고,
+CA를 신뢰하지 않는 클라이언트는 거절되는지(TLS가 실제로 걸려 있는지)까지 봅니다.
+두 요청을 동시에 보내 프린터에 두 작업이 섞이지 않고 한 장씩 도착하는지도 확인합니다.
 
 ---
 
@@ -368,10 +285,6 @@ src/
       services                예배 회차
       settings                설정 (공개 GET / 관리자 PATCH)
       admin/auth              관리자 코드 → 세션 쿠키
-      print/jobs              큐 등록·조회·재시도·비우기
-      print/next              에이전트 폴링 + 하트비트 + 잡 클레임
-      print/complete          에이전트 결과 보고
-      print/status            프린터 아이콘 / 대시보드
   components/
     AppShell.tsx              항상 보이는 헤더·푸터, 프린터 상태
     AdminCodeDialog.tsx       톱니바퀴 코드 키패드
@@ -379,20 +292,24 @@ src/
     settings/                 세팅 화면 패널들 + 차트
   lib/
     label.ts                  Canvas 라벨 렌더링 → 래스터 (브라우저)
-    brother.ts                Brother QL 커맨드 스트림 조립 (서버)
-    raster.ts                 PackBits, 비트 패킹, 용지 기하 (공용)
-    poll-interval.ts          에이전트 폴링 주기 산정 (무료 티어 한도 관리)
+    brother.ts                Brother QL 커맨드 스트림 조립 (브라우저에서 실행)
+    raster.ts                 PackBits, 비트 패킹, 용지 기하
+    print-client.ts           작업 조립 → 브릿지로 전송, 브릿지 상태 조회
     use-visible-polling.ts    화면이 꺼지면 멈추는 폴링 훅
     codes.ts                  픽업 보안코드
     messages.ts               랜덤 축하 메시지
     admin.ts                  코드 해시(scrypt) + 서명 세션 쿠키
 db/schema.sql                 전체 스키마 (멱등)
-print-agent/agent.mjs         LAN 프린트 에이전트
+bridge/
+  bridge.mjs                  라즈베리파이 프린트 브릿지 (HTTPS → TCP 9100)
+  make-cert.sh                도메인 없을 때 쓰는 자체 인증서 발급
+  starlight-bridge.service    systemd 서비스
+  README.md                   파이 설치 안내
 scripts/
   migrate.mjs                 스키마 적용 + 기본값
   gen-icons.mjs               PWA 아이콘 생성 (PNG 인코더 직접 구현)
   neon-http-proxy.mjs         로컬 개발용 Neon HTTP 프록시
-tests/                        래스터 / 라벨 / 폴링 주기 / SQL / e2e
+tests/                        래스터 / 라벨 / 브릿지 / SQL / e2e
 ```
 
 ---
@@ -401,17 +318,18 @@ tests/                        래스터 / 라벨 / 폴링 주기 / SQL / e2e
 
 | 증상 | 확인할 것 |
 |---|---|
-| 프린터 아이콘이 **빨강** | 에이전트가 안 돌고 있습니다. `journalctl -u starlight-print -f` 또는 콘솔 확인. 체크인은 계속 되고 인쇄는 큐에 쌓입니다 |
-| 아이콘은 초록인데 인쇄 안 됨 | 세팅 → 프린터에서 IP가 비어 있는지 확인. `--status` 로 프린터 직접 점검 |
-| `용지가 없습니다` | 롤을 다시 넣으세요. 잡은 20초 후 자동 재시도되며 최대 3회입니다 |
-| `이름표가 곧 인쇄됩니다` 로 끝남 | 정상입니다. 예배 시간대가 아니면 에이전트가 10초 주기라 첫 라벨만 늦게 나옵니다. 에이전트가 죽었을 때만 화면이 멈추고 확인 버튼이 뜹니다 |
+| 프린터 아이콘이 **빨강** | 브릿지나 프린터에 연결이 안 됩니다. 아이콘에 손가락을 대면 이유가 뜹니다. 파이 전원, `journalctl -u starlight-bridge -f`, 아이패드가 같은 와이파이인지 확인 |
+| `프린트 브릿지에 연결할 수 없습니다` | 파이가 꺼졌거나, 다른 네트워크이거나, **아이패드가 인증서를 신뢰하지 않는** 경우입니다. 아이패드 Safari로 브릿지 주소를 직접 열어 경고가 뜨는지 보세요 ([bridge/README.md](bridge/README.md) 4번) |
+| 아이콘이 **주황** / `용지가 없습니다` | 롤을 다시 넣고 확인 화면의 **다시 인쇄** 를 누르세요. 같은 이름표가 다시 나갑니다 |
+| `브릿지 키가 맞지 않습니다` | 앱 세팅의 브릿지 키와 파이 `config.json` 의 `key` 가 다릅니다 |
+| 세팅에 `들어있는 용지` 가 설정과 다르다는 경고 | 프린터에 다른 폭의 롤이 들어 있습니다. 테이프 폭 설정을 맞추세요 |
 | 라벨이 거꾸로 | 세팅 → 프린터 → **180° 회전** |
 | 글자가 흐리거나 끊김 | **흑백 임계값** 을 올리세요 (기본 160) |
 | 라벨이 너무 길거나 짧음 | **라벨 길이(mm)** 조절 |
 | 한글이 □□□ 로 나옴 | 아이패드/브라우저에 한글 폰트가 없는 경우입니다. 라벨은 아이패드가 그리므로 실제 기기에서 확인하세요 |
 | 세팅에 못 들어감 | 기본 코드는 `1234` 입니다. 잊었다면 `app_settings` 의 `admin_code` 행을 지우면 `1234` 로 되돌아갑니다 |
 | 화면이 보라색만 뜨고 비어 있음 | `DATABASE_URL` 확인. DB가 죽어도 검색창은 떠야 하며, 그때는 상단에 경고 배너가 나옵니다 |
-| 같은 아이가 두 번 체크인됨 | 정상입니다 — 기존 기록을 재사용해 같은 코드로 재인쇄만 합니다. 검색 결과에도 `오늘 체크인됨` 이 표시됩니다 |
+| 같은 아이가 두 번 체크인됨 | 정상입니다 — 기존 기록을 재사용해 같은 코드로 재인쇄만 합니다. 검색 결과에도 `오늘 체크인됨` 이 표시됩니다. 이름표를 잃어버렸을 때 다시 뽑는 방법이기도 합니다 |
 
 ---
 
@@ -425,9 +343,10 @@ tests/                        래스터 / 라벨 / 폴링 주기 / SQL / e2e
 | 요청 한도 | 100,000 / day | 1,000,000 / month (≈33,000/day) |
 | CPU | 10 ms / 요청 | 4 CPU-hrs / month |
 | **상업·단체 사용** | **제한 없음** | **"non-commercial, personal use only"** |
-| 이 앱의 예상 사용량 | 최다일 24,094 → **한도의 24%** | 604,600/month → **한도의 60%** |
+| 이 앱의 예상 사용량 | 주일 약 3,500 → **한도의 4%** | 월 약 15,000 → **한도의 2% 미만** |
 
-수치상으로는 둘 다 들어갑니다. 갈리는 지점은 약관입니다 — Vercel은
+인쇄가 LAN 안에서 브릿지로 바로 가고 폴링하는 곳이 없어서, 서버 요청은 실제
+체크인·검색·등록할 때만 생깁니다. 수치상으로는 둘 다 넉넉합니다. 갈리는 지점은 약관입니다 — Vercel은
 [fair use 가이드라인](https://vercel.com/docs/limits/fair-use-guidelines#commercial-usage)
 에서 Hobby 플랜을 비상업·개인 용도로 제한한다고 명시하고 있어, 교회 사역 도구는
 회색지대입니다. 비영리라도 단체 운영이면 안전하지 않습니다. Cloudflare 무료
@@ -447,8 +366,8 @@ tests/                        래스터 / 라벨 / 폴링 주기 / SQL / e2e
 
 나머지는 손댈 게 없습니다. `src/` 에서 쓰는 Node 전용 API는 `node:crypto` 뿐이고
 (`createHmac` · `randomBytes` · `timingSafeEqual`), 전부 `nodejs_compat` 에서
-지원됩니다. `fs` · `net` · `child_process` 는 배포되지 않는 스크립트와 프린트
-에이전트에만 있습니다.
+지원됩니다. `fs` · `net` · `child_process` 는 배포되지 않는 스크립트와 라즈베리파이
+브릿지에만 있습니다.
 
 ---
 
@@ -460,6 +379,11 @@ tests/                        래스터 / 라벨 / 폴링 주기 / SQL / e2e
   신뢰할 수 없는 소스맵을 처리할 때만 해당되어 이 앱의 런타임과는 무관합니다.
 - 인쇄 성공 판정은 **프린터가 데이터를 받았고 사전 상태 점검에서 오류가 없었다**
   는 뜻입니다. 전송 중간에 용지가 끊기는 경우까지는 알 수 없습니다.
+- 인쇄 대기열이 없습니다. 브릿지가 꺼져 있으면 그 자리에서 실패로 표시되고,
+  파이를 켠 뒤 **다시 인쇄**(또는 같은 아이를 다시 체크인)로 뽑습니다. 체크인
+  기록 자체는 인쇄와 상관없이 저장됩니다.
+- 아이패드와 브릿지가 **같은 네트워크**에 있어야 합니다. 게스트 와이파이처럼
+  기기끼리 통신을 막는(client isolation) 네트워크에서는 인쇄되지 않습니다.
 - 오프라인 캐시는 앱 셸까지만입니다. `/api/` 응답은 절대 캐시하지 않습니다 —
   오래된 명단이나 오래된 체크인 응답은 에러보다 위험합니다.
 - 세팅 화면은 아이패드에서도 열리지만 노트북 화면에 더 맞춰져 있습니다.
