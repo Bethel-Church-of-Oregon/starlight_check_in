@@ -16,3 +16,4 @@ bridge/config.json
 bridge/certs/
 .vercel
 .env*
+!.env.example
