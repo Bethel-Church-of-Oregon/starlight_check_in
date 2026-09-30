@@ -100,11 +100,14 @@ create table if not exists check_ins (
   grade          text,
   checked_in_at  timestamptz not null default now(),
   checked_in_by  text,
-  checked_out_at timestamptz,   -- unused: the app records check-in only
-  checked_out_by text,          -- unused
   reprints       int not null default 0,
   created_at     timestamptz not null default now()
 );
+
+-- Check-out was removed: the app records check-in only, and pickup is checked
+-- by volunteers against the code on the name tag.
+alter table check_ins drop column if exists checked_out_at;
+alter table check_ins drop column if exists checked_out_by;
 
 create index if not exists check_ins_session on check_ins (session_date desc, checked_in_at desc);
 create index if not exists check_ins_student on check_ins (student_id, session_date desc);
