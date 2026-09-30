@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic'
  * without punctuation).
  *
  * Each row also carries whether the child is already checked in today, so a
- * volunteer cannot accidentally hand out two name tags to the same kid.
+ * volunteer cannot accidentally hand out two name tags to the same kid — but
+ * never the pickup code itself. This endpoint answers anyone at the kiosk,
+ * and a code anyone can look up by typing a child's name protects nothing.
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('q')?.trim() ?? ''
@@ -29,12 +31,11 @@ export async function GET(request: NextRequest) {
     const students = await sql`
       select s.id, s.korean_name, s.english_name, s.grade, s.gender, s.code,
              s.guardian_name, s.guardian_phone, s.allergies, s.medical_notes,
-             t.security_code as today_code,
              t.service_name  as today_service,
              t.checked_in_at as today_checked_in_at
       from students s
       left join lateral (
-        select security_code, service_name, checked_in_at
+        select service_name, checked_in_at
         from check_ins c
         where c.student_id = s.id and c.session_date = ${today}::date
         order by c.checked_in_at desc

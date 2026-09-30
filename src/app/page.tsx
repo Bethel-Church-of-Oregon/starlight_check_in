@@ -16,7 +16,6 @@ interface SearchResult {
   guardian_phone: string | null
   allergies: string | null
   medical_notes: string | null
-  today_code: string | null
   today_service: string | null
   today_checked_in_at: string | null
 }
@@ -198,7 +197,7 @@ export default function SearchScreen() {
                     <span className="chip">{student.grade}</span>
                     {student.today_checked_in_at && (
                       <span className="chip chipGreen">
-                        오늘 체크인됨 · {student.today_code}
+                        오늘 체크인됨
                       </span>
                     )}
                     {student.allergies && <span className="chip chipWarn">알레르기</span>}

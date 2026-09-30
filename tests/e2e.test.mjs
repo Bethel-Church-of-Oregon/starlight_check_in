@@ -273,11 +273,20 @@ await t('checking in an unknown student 404s', async () => {
   assert.strictEqual(status, 404)
 })
 
-await t('the search row now shows the child as checked in today', async () => {
+await t('the search row shows "checked in today" but never the pickup code', async () => {
   const { body } = await api('/api/students/search?q=' + encodeURIComponent(`한서준${RUN}`))
   const row = body.students.find((s) => s.id === studentId)
-  assert.strictEqual(row.today_code, securityCode)
-  assert.ok(row.today_checked_in_at)
+  assert.ok(row.today_checked_in_at, 'volunteer can see the child is already in')
+  assert.strictEqual(row.today_code, undefined, 'no pickup code in the public search response')
+  assert.ok(!JSON.stringify(body).includes(securityCode), 'the code appears nowhere in the payload')
+})
+
+await t('the student detail the check-in screen loads carries no pickup code', async () => {
+  const { status, body } = await api(`/api/students/${studentId}`)
+  assert.strictEqual(status, 200)
+  assert.ok(body.history.length >= 1, 'history is still there for "checked in today"')
+  assert.strictEqual(body.history[0].security_code, undefined)
+  assert.ok(!JSON.stringify(body).includes(securityCode), 'the code appears nowhere in the payload')
 })
 
 await t("today's roll-up (with pickup codes) is closed without the admin code", async () => {

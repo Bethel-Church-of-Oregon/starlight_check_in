@@ -72,12 +72,11 @@ await t('students insert accepts a Korean-only child', async () => {
 const searchSql = `
   select s.id, s.korean_name, s.english_name, s.grade, s.gender, s.code,
          s.guardian_name, s.guardian_phone, s.allergies, s.medical_notes,
-         t.security_code as today_code,
          t.service_name  as today_service,
          t.checked_in_at as today_checked_in_at
   from students s
   left join lateral (
-    select security_code, service_name, checked_in_at
+    select service_name, checked_in_at
     from check_ins c
     where c.student_id = s.id and c.session_date = $3::date
     order by c.checked_in_at desc

@@ -16,7 +16,6 @@ interface HistoryRow {
   id: string
   session_date: string
   service_name: string | null
-  security_code: string
   checked_in_at: string
 }
 
@@ -283,7 +282,7 @@ export default function CheckInScreen() {
                     <span className="chip">{student.grade}</span>
                     {alreadyToday && (
                       <span className="chip chipGreen">
-                        오늘 체크인됨 · {alreadyToday.security_code}
+                        오늘 체크인됨
                       </span>
                     )}
                     {student.allergies && (
