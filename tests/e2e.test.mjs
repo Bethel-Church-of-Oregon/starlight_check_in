@@ -280,15 +280,17 @@ await t('the search row now shows the child as checked in today', async () => {
   assert.ok(row.today_checked_in_at)
 })
 
-await t("today's roll-up lists the check-in", async () => {
+await t("today's roll-up (with pickup codes) is closed without the admin code", async () => {
   const { status, body } = await api('/api/checkins/today')
-  assert.strictEqual(status, 200)
-  assert.strictEqual(body.total, 1)
-  assert.strictEqual(body.checkedOut, 0)
-  assert.deepStrictEqual(body.byGrade, [{ grade: '4th', count: 1 }])
+  assert.strictEqual(status, 401)
+  assert.strictEqual(body.checkIns, undefined, 'no names or pickup codes leak')
+  const checkout = await api(`/api/checkins/${checkInId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ checkedOut: true }),
+  })
+  assert.strictEqual(checkout.status, 401, 'nobody can check a child out from the kiosk')
 })
 
-// --- admin session --------------------------------------------------------
 await t('a wrong admin code is refused', async () => {
   const { status } = await api('/api/admin/auth', {
     method: 'POST',
@@ -317,6 +319,15 @@ await t('the right admin code opens a session', async () => {
   assert.strictEqual(check.body.authenticated, true)
 })
 
+await t("today's roll-up lists the check-in once signed in", async () => {
+  const { status, body } = await api('/api/checkins/today')
+  assert.strictEqual(status, 200)
+  assert.strictEqual(body.total, 1)
+  assert.strictEqual(body.checkedOut, 0)
+  assert.deepStrictEqual(body.byGrade, [{ grade: '4th', count: 1 }])
+})
+
+// --- admin session --------------------------------------------------------
 await t('the roster endpoint opens up once signed in', async () => {
   const { status, body } = await api('/api/students')
   assert.strictEqual(status, 200)
@@ -500,6 +511,7 @@ await t('signing out closes the admin endpoints again', async () => {
   await api('/api/admin/auth', { method: 'DELETE' })
   cookie = ''
   assert.strictEqual((await api('/api/students')).status, 401)
+  assert.strictEqual((await api('/api/checkins/today')).status, 401)
 })
 
 await printer.close().catch(() => {})

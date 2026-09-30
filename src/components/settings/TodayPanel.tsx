@@ -34,6 +34,8 @@ export default function TodayPanel() {
   const [data, setData] = useState<Payload | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Once the admin session lapses, stop refreshing — see the polling note below. */
+  const [expired, setExpired] = useState(false)
 
   const load = useCallback(
     async (forDate?: string) => {
@@ -42,6 +44,10 @@ export default function TodayPanel() {
       try {
         const query = forDate ? `?date=${encodeURIComponent(forDate)}` : ''
         const response = await fetch(`/api/checkins/today${query}`, { cache: 'no-store' })
+        if (response.status === 401) {
+          setExpired(true)
+          return
+        }
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.error ?? 'failed')
         setData(payload)
@@ -56,8 +62,11 @@ export default function TodayPanel() {
   )
 
   // A settings screen left open on a laptop during service should stay current
-  // — but not while it is a background tab.
-  useVisiblePolling(() => load(date || undefined), 30000)
+  // — but not while it is a background tab, and not forever: each refresh
+  // wakes the database, and a tab left open all week would keep Neon's compute
+  // running around the clock (≈180 CU-hours against the free plan's 100).
+  // The admin session lasts 30 minutes; when it lapses, refreshing stops.
+  useVisiblePolling(() => (expired ? undefined : load(date || undefined)), 30000)
 
   const toggleCheckOut = async (row: Row) => {
     await fetch(`/api/checkins/${row.id}`, {
@@ -109,6 +118,12 @@ export default function TodayPanel() {
         </span>
       }
     >
+      {expired && (
+        <Notice kind="warn">
+          관리자 세션이 만료되어 자동 새로고침을 멈췄습니다. 톱니바퀴를 눌러 코드를 다시
+          입력해 주세요.
+        </Notice>
+      )}
       {error && <Notice kind="error">{error}</Notice>}
 
       <div className="statRow" style={{ marginBottom: 18 }}>

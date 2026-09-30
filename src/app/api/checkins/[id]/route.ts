@@ -6,8 +6,11 @@ export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ id: string }> }
 
-/** Check a child out (or clear a check-out if it was a mistake). */
+/** Check a child out (or clear a check-out if it was a mistake). Settings screen only. */
 export async function PATCH(request: NextRequest, { params }: Params) {
+  if (!(await hasAdminSession())) {
+    return Response.json({ error: 'Admin session required' }, { status: 401 })
+  }
   const { id } = await params
   let body: { checkedOut?: boolean; checkedOutBy?: string | null }
   try {
