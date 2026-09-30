@@ -125,7 +125,7 @@ await t('check-in insert stores a denormalised grade and no service', async () =
   )
   assert.strictEqual(rows[0].security_code, 'H7KM')
   assert.strictEqual(rows[0].grade, '3rd')
-  assert.strictEqual(rows[0].service_id, null)
+  assert.strictEqual(rows[0].service_id, undefined, 'no service column')
   assert.strictEqual(rows[0].reprints, 0)
 })
 

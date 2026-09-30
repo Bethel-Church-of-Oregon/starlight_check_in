@@ -246,7 +246,7 @@ await t('checking in returns a label payload with a 4-character code', async () 
   assert.strictEqual(body.labelPayload.englishName, `Seojun Han ${RUN}`)
   assert.strictEqual(body.labelPayload.grade, '4th')
   assert.strictEqual(body.labelPayload.serviceName, undefined, 'no service on the label')
-  assert.strictEqual(body.checkIn.service_id, null)
+  assert.strictEqual(body.checkIn.service_id, undefined, 'no service column')
 
   // Time: checked_in_at is the real instant; session_date is today in the
   // church's timezone (America/Los_Angeles by default), not today in UTC.

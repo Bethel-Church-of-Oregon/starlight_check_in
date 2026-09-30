@@ -65,21 +65,6 @@ end $$;
 create index if not exists students_active_grade on students (active, grade);
 
 -- --------------------------------------------------------------------------
--- services (회차) — no longer used by the app.
--- Check-in used to ask which service a child was attending; it now records
--- one check-in per child per day. The table and check_ins.service_id /
--- service_name stay so older records keep their service name.
--- --------------------------------------------------------------------------
-create table if not exists services (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null,
-  start_time time,
-  sort_order int not null default 0,
-  active     boolean not null default true,
-  created_at timestamptz not null default now()
-);
-
--- --------------------------------------------------------------------------
 -- check_ins
 -- grade is denormalised on purpose so historical attendance reports stay
 -- correct after a child moves up a grade.
@@ -93,8 +78,6 @@ create table if not exists services (
 create table if not exists check_ins (
   id             uuid primary key default gen_random_uuid(),
   student_id     uuid not null references students (id) on delete cascade,
-  service_id     uuid references services (id) on delete set null,
-  service_name   text,
   session_date   date not null,
   security_code  text not null,
   grade          text,
@@ -104,10 +87,16 @@ create table if not exists check_ins (
   created_at     timestamptz not null default now()
 );
 
--- Check-out was removed: the app records check-in only, and pickup is checked
--- by volunteers against the code on the name tag.
+-- Removed features, dropped from databases created before they went:
+--  * check-out — the app records check-in only; pickup is checked by
+--    volunteers against the code on the name tag
+--  * services (회차) — one check-in per child per day, no service choice.
+--    service_id references services, so it must go before the table does.
 alter table check_ins drop column if exists checked_out_at;
 alter table check_ins drop column if exists checked_out_by;
+alter table check_ins drop column if exists service_id;
+alter table check_ins drop column if exists service_name;
+drop table if exists services;
 
 create index if not exists check_ins_session on check_ins (session_date desc, checked_in_at desc);
 create index if not exists check_ins_student on check_ins (student_id, session_date desc);
