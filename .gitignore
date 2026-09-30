@@ -14,3 +14,5 @@ print-agent/*.log
 .tmp-test/
 bridge/config.json
 bridge/certs/
+.vercel
+.env*
