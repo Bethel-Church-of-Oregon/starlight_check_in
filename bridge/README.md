@@ -15,21 +15,29 @@
 
 ## 1. 준비물
 
-- 라즈베리파이 3B+ 이상 (Zero 2 W도 충분). **Raspberry Pi OS Lite (64-bit)**
+- 라즈베리파이 3B+ 이상 (Zero 2 W도 충분)
+- 운영체제: **Raspberry Pi OS Lite (64-bit)** 권장. 파이 공식 OS(데비안 기반)로
+  가볍고 파이 하드웨어 지원이 가장 좋습니다. **Ubuntu Server (64-bit)** 도 그대로
+  동작합니다 — 아래 명령(`apt`, `systemctl`, `certbot`)은 둘 다 같습니다. 어느 쪽이든
+  **64-bit** 로 설치하세요. 최신 Node는 32-bit ARM을 지원하지 않습니다.
 - 프린터와 **같은 네트워크**. 가능하면 유선 연결
 - **고정 IP** — 공유기에서 파이의 DHCP 예약을 걸어 주세요. 아이패드가 이 주소로
   접속하고, 인증서에도 이 주소가 들어갑니다. 프린터도 마찬가지로 예약해 두세요.
 
-Raspberry Pi Imager로 OS를 구울 때 톱니바퀴 설정에서 **SSH 켜기**와 사용자
-이름/비밀번호를 정해 두면 모니터 없이 설치할 수 있습니다.
+Raspberry Pi Imager로 OS를 구울 때 설정 화면에서 **SSH 켜기**와 사용자
+이름/비밀번호(필요하면 와이파이)를 정해 두면 모니터 없이 설치할 수 있습니다.
+Raspberry Pi OS와 Ubuntu Server 모두 이 설정을 지원합니다.
 
 ## 2. Node 설치
 
+Node 24 LTS를 씁니다(Node 20은 2026년 3월에 지원 종료). 브릿지는 의존성이 없어서
+Node 18 이상이면 돌지만, 오래 켜 둘 장비라 지원 기간이 긴 버전이 좋습니다.
+
 ```bash
 ssh <사용자>@192.168.1.60
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
-node -v      # v20.x
+node -v      # v24.x
 ```
 
 ## 3. 브릿지 복사
