@@ -11,7 +11,6 @@ interface Row {
   security_code: string
   grade: string | null
   checked_in_at: string
-  checked_out_at: string | null
   reprints: number
   student_id: string
   korean_name: string | null
@@ -22,12 +21,11 @@ interface Payload {
   date: string
   timezone: string
   total: number
-  checkedOut: number
   byGrade: { grade: string; count: number }[]
   checkIns: Row[]
 }
 
-/** Live view of who is in the building right now. */
+/** Who checked in on a given day (today by default). */
 export default function TodayPanel() {
   const [date, setDate] = useState('')
   const [data, setData] = useState<Payload | null>(null)
@@ -67,15 +65,6 @@ export default function TodayPanel() {
   // The admin session lasts 30 minutes; when it lapses, refreshing stops.
   useVisiblePolling(() => (expired ? undefined : load(date || undefined)), 30000)
 
-  const toggleCheckOut = async (row: Row) => {
-    await fetch(`/api/checkins/${row.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checkedOut: !row.checked_out_at }),
-    })
-    void load(date)
-  }
-
   const remove = async (row: Row) => {
     const name = displayName(row.korean_name, row.english_name)
     if (!confirm(`${name} 의 체크인 기록을 삭제할까요? 되돌릴 수 없습니다.`)) return
@@ -84,7 +73,7 @@ export default function TodayPanel() {
   }
 
   const timezone = data?.timezone ?? 'America/Los_Angeles'
-  const present = (data?.total ?? 0) - (data?.checkedOut ?? 0)
+  const reprints = (data?.checkIns ?? []).reduce((sum, row) => sum + row.reprints, 0)
 
   return (
     <Panel
@@ -127,9 +116,8 @@ export default function TodayPanel() {
 
       <div className="statRow" style={{ marginBottom: 18 }}>
         <Stat value={data?.total ?? 0} label="총 체크인" />
-        <Stat value={present} label="현재 있는 인원" />
-        <Stat value={data?.checkedOut ?? 0} label="체크아웃" />
         <Stat value={data?.byGrade.length ?? 0} label="학년 수" />
+        <Stat value={reprints} label="이름표 재인쇄" />
       </div>
 
       {(data?.byGrade.length ?? 0) > 0 && (
@@ -150,7 +138,6 @@ export default function TodayPanel() {
               <th>학년</th>
               <th>코드</th>
               <th>체크인</th>
-              <th>체크아웃</th>
               <th />
             </tr>
           </thead>
@@ -176,21 +163,7 @@ export default function TodayPanel() {
                 </td>
                 <td>{formatClock(row.checked_in_at, timezone)}</td>
                 <td>
-                  {row.checked_out_at ? (
-                    <span className="chip chipGreen">{formatClock(row.checked_out_at, timezone)}</span>
-                  ) : (
-                    <button type="button" className="btn" onClick={() => void toggleCheckOut(row)}>
-                      체크아웃
-                    </button>
-                  )}
-                </td>
-                <td>
-                  <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    {row.checked_out_at && (
-                      <button type="button" className="btn" onClick={() => void toggleCheckOut(row)}>
-                        취소
-                      </button>
-                    )}
+                  <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
                       className="iconBtn"
@@ -205,7 +178,7 @@ export default function TodayPanel() {
             ))}
             {(data?.checkIns.length ?? 0) === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 26 }}>
+                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 26 }}>
                   아직 체크인한 학생이 없습니다.
                 </td>
               </tr>

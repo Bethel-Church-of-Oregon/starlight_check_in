@@ -100,8 +100,8 @@ create table if not exists check_ins (
   grade          text,
   checked_in_at  timestamptz not null default now(),
   checked_in_by  text,
-  checked_out_at timestamptz,
-  checked_out_by text,
+  checked_out_at timestamptz,   -- unused: the app records check-in only
+  checked_out_by text,          -- unused
   reprints       int not null default 0,
   created_at     timestamptz not null default now()
 );

@@ -17,7 +17,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   // Recent visits are handy on the check-in screen ("checked in already today?").
   // No pickup codes: this endpoint is public, and the kiosk is too.
   const history = await sql`
-    select id, session_date, checked_in_at, checked_out_at
+    select id, session_date, checked_in_at
     from check_ins
     where student_id = ${id}::uuid
     order by checked_in_at desc

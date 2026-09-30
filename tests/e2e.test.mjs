@@ -303,11 +303,6 @@ await t("today's roll-up (with pickup codes) is closed without the admin code", 
   const { status, body } = await api('/api/checkins/today')
   assert.strictEqual(status, 401)
   assert.strictEqual(body.checkIns, undefined, 'no names or pickup codes leak')
-  const checkout = await api(`/api/checkins/${checkInId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ checkedOut: true }),
-  })
-  assert.strictEqual(checkout.status, 401, 'nobody can check a child out from the kiosk')
 })
 
 await t('a wrong admin code is refused', async () => {
@@ -342,7 +337,8 @@ await t("today's roll-up lists the check-in once signed in", async () => {
   const { status, body } = await api('/api/checkins/today')
   assert.strictEqual(status, 200)
   assert.strictEqual(body.total, 1)
-  assert.strictEqual(body.checkedOut, 0)
+  assert.strictEqual(body.checkedOut, undefined, 'no check-out tracking')
+  assert.strictEqual(body.checkIns[0].checked_out_at, undefined)
   assert.deepStrictEqual(body.byGrade, [{ grade: '4th', count: 1 }])
 })
 
@@ -487,22 +483,12 @@ await t('turning printing off is visible to the iPad at check-in', async () => {
   }
 })
 
-await t('a child can be checked out and the check-out undone', async () => {
-  const out = await api(`/api/checkins/${checkInId}`, {
+await t('check-out does not exist: the endpoint only allows deleting a check-in', async () => {
+  const response = await api(`/api/checkins/${checkInId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ checkedOut: true, checkedOutBy: '한지영' }),
+    body: JSON.stringify({ checkedOut: true }),
   })
-  assert.strictEqual(out.status, 200)
-  assert.ok(out.body.checkIn.checked_out_at)
-
-  const today = await api('/api/checkins/today')
-  assert.strictEqual(today.body.checkedOut, 1)
-
-  const undo = await api(`/api/checkins/${checkInId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ checkedOut: false }),
-  })
-  assert.strictEqual(undo.body.checkIn.checked_out_at, null)
+  assert.strictEqual(response.status, 405, 'PATCH (check-out) is gone')
 })
 
 await t('a student can be edited and soft-deleted', async () => {

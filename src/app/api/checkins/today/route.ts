@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const sql = getSql()
   const checkIns = await sql`
     select c.id, c.security_code, c.grade,
-           c.checked_in_at, c.checked_out_at, c.checked_out_by, c.reprints,
+           c.checked_in_at, c.reprints,
            s.id as student_id, s.korean_name, s.english_name
     from check_ins c
     join students s on s.id = c.student_id
@@ -46,8 +46,6 @@ export async function GET(request: NextRequest) {
     date,
     timezone: settings.general.timezone,
     total: checkIns.length,
-    checkedOut: (checkIns as { checked_out_at: string | null }[]).filter((c) => c.checked_out_at)
-      .length,
     byGrade,
     checkIns,
   })

@@ -21,15 +21,11 @@ export interface Student {
 export interface CheckIn {
   id: string
   student_id: string
-  service_id: string | null
-  service_name: string | null
   session_date: string
   security_code: string
   grade: string | null
   checked_in_at: string
   checked_in_by: string | null
-  checked_out_at: string | null
-  checked_out_by: string | null
 }
 
 export interface GeneralSettings {

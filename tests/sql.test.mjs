@@ -181,7 +181,7 @@ await t('security codes in use today can be collected for collision checks', asy
 await t('today view joins students and aggregates by grade', async () => {
   const { rows } = await q(
     `select c.id, c.security_code, c.grade,
-            c.checked_in_at, c.checked_out_at, c.checked_out_by, c.reprints,
+            c.checked_in_at, c.reprints,
             s.id as student_id, s.korean_name, s.english_name
      from check_ins c
      join students s on s.id = c.student_id
@@ -200,22 +200,6 @@ await t('today view joins students and aggregates by grade', async () => {
   assert.deepStrictEqual(byGrade, [{ grade: '3rd', count: 1 }])
 })
 
-await t('check-out and undo both work', async () => {
-  const { rows: ci } = await q(`select id from check_ins where session_date = $1::date`, [TODAY])
-  const id = ci[0].id
-  const out = await q(
-    `update check_ins set checked_out_at = now(), checked_out_by = $2 where id = $1::uuid returning checked_out_at`,
-    [id, 'Mom']
-  )
-  assert.ok(out.rows[0].checked_out_at)
-  const undo = await q(
-    `update check_ins set checked_out_at = null, checked_out_by = null where id = $1::uuid returning checked_out_at`,
-    [id]
-  )
-  assert.strictEqual(undo.rows[0].checked_out_at, null)
-})
-
-// --- retired tables ------------------------------------------------------
 await t('the retired print queue tables are gone', async () => {
   const { rows } = await q(
     `select table_name from information_schema.tables
