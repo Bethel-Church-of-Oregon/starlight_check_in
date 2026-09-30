@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '@/components/app-context'
-import type { GeneralSettings, LabelSettings, PrinterSettings, Service } from '@/lib/types'
+import type { GeneralSettings, LabelSettings, PrinterSettings } from '@/lib/types'
 import { DEFAULT_GENERAL, DEFAULT_LABEL, DEFAULT_PRINTER, DEFAULT_GRADES } from '@/lib/settings'
 import TodayPanel from './TodayPanel'
 import RosterPanel from './RosterPanel'
@@ -26,7 +26,6 @@ interface FullSettings {
   printer: PrinterSettings
   label: LabelSettings
   grades: string[]
-  services: Service[]
 }
 
 export default function SettingsClient() {
@@ -45,7 +44,6 @@ export default function SettingsClient() {
         printer: { ...DEFAULT_PRINTER, ...data.printer },
         label: { ...DEFAULT_LABEL, ...data.label },
         grades: data.grades?.length ? data.grades : DEFAULT_GRADES,
-        services: data.services ?? [],
       })
       setError(null)
     } catch {
@@ -67,22 +65,7 @@ export default function SettingsClient() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? '저장에 실패했습니다.')
       await load()
-      // The kiosk chrome reads the church name, grades and services from here.
-      await app.refresh()
-    },
-    [load, app]
-  )
-
-  const saveServices = useCallback(
-    async (services: { id?: string; name: string; startTime: string | null }[]) => {
-      const response = await fetch('/api/services', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ services }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? '저장에 실패했습니다.')
-      await load()
+      // The kiosk chrome reads the church name and grades from here.
       await app.refresh()
     },
     [load, app]
@@ -133,9 +116,7 @@ export default function SettingsClient() {
         <GeneralPanel
           general={settings.general}
           grades={settings.grades}
-          services={settings.services}
           onSave={save}
-          onSaveServices={saveServices}
         />
       )}
 

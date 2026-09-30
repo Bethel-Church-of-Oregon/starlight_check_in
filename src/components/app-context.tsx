@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { DEFAULT_GENERAL, DEFAULT_LABEL, DEFAULT_GRADES, DEFAULT_PRINTER } from '@/lib/settings'
-import type { GeneralSettings, LabelSettings, PrinterSettings, Service } from '@/lib/types'
+import type { GeneralSettings, LabelSettings, PrinterSettings } from '@/lib/types'
 
 interface AppContextValue {
   ready: boolean
@@ -20,7 +20,6 @@ interface AppContextValue {
   general: GeneralSettings
   label: LabelSettings
   grades: string[]
-  services: Service[]
   /** Full print settings — the iPad assembles jobs and calls the bridge itself. */
   printer: PrinterSettings
   refresh: () => Promise<void>
@@ -33,7 +32,6 @@ const FALLBACK: Omit<AppContextValue, 'refresh'> = {
   general: DEFAULT_GENERAL,
   label: DEFAULT_LABEL,
   grades: DEFAULT_GRADES,
-  services: [],
   printer: DEFAULT_PRINTER,
 }
 
@@ -54,7 +52,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         general: { ...DEFAULT_GENERAL, ...data.general },
         label: { ...DEFAULT_LABEL, ...data.label },
         grades: Array.isArray(data.grades) && data.grades.length ? data.grades : DEFAULT_GRADES,
-        services: Array.isArray(data.services) ? data.services : [],
         printer: { ...FALLBACK.printer, ...data.printer },
       })
     } catch (error) {

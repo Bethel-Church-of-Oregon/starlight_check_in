@@ -19,7 +19,6 @@ const SAMPLE: LabelPayload = {
   englishName: 'Minjun Kim',
   grade: '3rd',
   securityCode: 'H7KM',
-  serviceName: '1부 예배',
   checkedInAt: new Date().toISOString(),
 }
 
@@ -312,7 +311,6 @@ export default function PrinterPanel({
         <Toggle label="한글 이름" value={labelDraft.showKorean} onChange={(v) => setLabel('showKorean', v)} />
         <Toggle label="영어 이름" value={labelDraft.showEnglish} onChange={(v) => setLabel('showEnglish', v)} />
         <Toggle label="학년" value={labelDraft.showGrade} onChange={(v) => setLabel('showGrade', v)} />
-        <Toggle label="회차 이름" value={labelDraft.showService} onChange={(v) => setLabel('showService', v)} />
         <Toggle label="픽업 보안코드" value={labelDraft.showCode} onChange={(v) => setLabel('showCode', v)} />
         <Toggle label="날짜 / 시간" value={labelDraft.showDateTime} onChange={(v) => setLabel('showDateTime', v)} />
 

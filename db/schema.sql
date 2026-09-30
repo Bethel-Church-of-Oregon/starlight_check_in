@@ -65,7 +65,10 @@ end $$;
 create index if not exists students_active_grade on students (active, grade);
 
 -- --------------------------------------------------------------------------
--- services (회차) — e.g. "1부 9:30", "2부 11:00"
+-- services (회차) — no longer used by the app.
+-- Check-in used to ask which service a child was attending; it now records
+-- one check-in per child per day. The table and check_ins.service_id /
+-- service_name stay so older records keep their service name.
 -- --------------------------------------------------------------------------
 create table if not exists services (
   id         uuid primary key default gen_random_uuid(),
@@ -78,8 +81,14 @@ create table if not exists services (
 
 -- --------------------------------------------------------------------------
 -- check_ins
--- service_name / grade are denormalised on purpose so historical attendance
--- reports stay correct after a service is renamed or a child moves up a grade.
+-- grade is denormalised on purpose so historical attendance reports stay
+-- correct after a child moves up a grade.
+--
+-- Time: checked_in_at is timestamptz — an absolute instant, stored as UTC and
+-- independent of any server's timezone. session_date is the church's local
+-- calendar date (app setting general.timezone, default America/Los_Angeles),
+-- so attendance is grouped by the Sunday it happened on locally even when the
+-- UTC timestamp has already rolled over to Monday.
 -- --------------------------------------------------------------------------
 create table if not exists check_ins (
   id             uuid primary key default gen_random_uuid(),

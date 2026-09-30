@@ -31,11 +31,10 @@ export async function GET(request: NextRequest) {
     const students = await sql`
       select s.id, s.korean_name, s.english_name, s.grade, s.gender, s.code,
              s.guardian_name, s.guardian_phone, s.allergies, s.medical_notes,
-             t.service_name  as today_service,
              t.checked_in_at as today_checked_in_at
       from students s
       left join lateral (
-        select service_name, checked_in_at
+        select checked_in_at
         from check_ins c
         where c.student_id = s.id and c.session_date = ${today}::date
         order by c.checked_in_at desc

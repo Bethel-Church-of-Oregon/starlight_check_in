@@ -18,14 +18,6 @@ export interface Student {
   updated_at?: string
 }
 
-export interface Service {
-  id: string
-  name: string
-  start_time: string | null
-  sort_order: number
-  active: boolean
-}
-
 export interface CheckIn {
   id: string
   student_id: string
@@ -77,7 +69,6 @@ export interface LabelSettings {
   showGrade: boolean
   showCode: boolean
   showDateTime: boolean
-  showService: boolean
   nameScale: number
 }
 
@@ -94,6 +85,5 @@ export interface LabelPayload {
   englishName: string | null
   grade: string | null
   securityCode: string
-  serviceName: string | null
   checkedInAt: string
 }

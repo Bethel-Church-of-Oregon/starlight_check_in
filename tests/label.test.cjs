@@ -58,13 +58,12 @@ const PAYLOAD = {
   englishName: 'Minjun Kim',
   grade: '3rd',
   securityCode: 'H7KM',
-  serviceName: '1부 예배',
   checkedInAt: '2026-09-08T16:32:00.000Z',
 }
 
 const LABEL = {
   showKorean: true, showEnglish: true, showGrade: true,
-  showCode: true, showDateTime: true, showService: true, nameScale: 1,
+  showCode: true, showDateTime: true, nameScale: 1,
 }
 
 const WHITE = () => [255, 255, 255, 255]

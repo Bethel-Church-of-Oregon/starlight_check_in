@@ -16,7 +16,6 @@ interface SearchResult {
   guardian_phone: string | null
   allergies: string | null
   medical_notes: string | null
-  today_service: string | null
   today_checked_in_at: string | null
 }
 

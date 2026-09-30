@@ -12,7 +12,6 @@ interface Payload {
   timezone: string
   daily: { session_date: string; total: number; students: number }[]
   byGrade: { grade: string; total: number; students: number }[]
-  byService: { service: string; total: number }[]
   perStudent: {
     id: string
     korean_name: string | null
@@ -144,31 +143,6 @@ export default function StatsPanel() {
       <Panel title="학년별 체크인">
         <CategoryBars data={gradeSeries} emptyText="이 기간에는 체크인 기록이 없습니다." />
 
-        {(data?.byService.length ?? 0) > 0 && (
-          <>
-            <h3 className="sectionTitle" style={{ marginTop: 24 }}>
-              회차별
-            </h3>
-            <div className="tableScroll">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>회차</th>
-                    <th style={{ textAlign: 'right' }}>체크인</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data!.byService.map((row) => (
-                    <tr key={row.service}>
-                      <td>{row.service}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{row.total}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
       </Panel>
 
       <Panel title={`학생별 출석 (${attended.length}명 참석 / ${neverAttended.length}명 미참석)`}>

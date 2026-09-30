@@ -72,11 +72,10 @@ await t('students insert accepts a Korean-only child', async () => {
 const searchSql = `
   select s.id, s.korean_name, s.english_name, s.grade, s.gender, s.code,
          s.guardian_name, s.guardian_phone, s.allergies, s.medical_notes,
-         t.service_name  as today_service,
          t.checked_in_at as today_checked_in_at
   from students s
   left join lateral (
-    select service_name, checked_in_at
+    select checked_in_at
     from check_ins c
     where c.student_id = s.id and c.session_date = $3::date
     order by c.checked_in_at desc
@@ -116,45 +115,44 @@ const { rows: pick } = await q(
   `select id, grade from students where korean_name = '김민준' limit 1`
 )
 const studentId = pick[0].id
-const { rows: svc } = await q(`select id, name from services order by sort_order limit 1`)
-const serviceId = svc[0].id
 
-await t('check-in insert stores a denormalised grade and service name', async () => {
+await t('check-in insert stores a denormalised grade and no service', async () => {
   const { rows } = await q(
-    `insert into check_ins (student_id, service_id, service_name, session_date,
-                            security_code, grade, checked_in_by)
-     values ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7)
+    `insert into check_ins (student_id, session_date, security_code, grade, checked_in_by)
+     values ($1::uuid, $2::date, $3, $4, $5)
      returning *`,
-    [studentId, serviceId, svc[0].name, TODAY, 'H7KM', pick[0].grade, null]
+    [studentId, TODAY, 'H7KM', pick[0].grade, null]
   )
   assert.strictEqual(rows[0].security_code, 'H7KM')
-  assert.strictEqual(rows[0].service_name, svc[0].name)
   assert.strictEqual(rows[0].grade, '3rd')
+  assert.strictEqual(rows[0].service_id, null)
   assert.strictEqual(rows[0].reprints, 0)
 })
 
-await t('the duplicate lookup finds the same-service check-in for today', async () => {
-  const { rows } = await q(
-    `select * from check_ins
-     where student_id = $1::uuid
-       and session_date = $2::date
-       and coalesce(service_id::text, '') = $3
-     order by checked_in_at desc limit 1`,
-    [studentId, TODAY, serviceId]
-  )
-  assert.strictEqual(rows.length, 1, 'found the existing check-in')
+await t('the duplicate lookup is one check-in per child per day', async () => {
+  const lookup = `select * from check_ins
+     where student_id = $1::uuid and session_date = $2::date
+     order by checked_in_at desc limit 1`
+  assert.strictEqual((await q(lookup, [studentId, TODAY])).rows.length, 1, 'today: found')
+  assert.strictEqual((await q(lookup, [studentId, '2026-09-13'])).rows.length, 0, 'next week: new check-in')
 })
 
-await t('the duplicate lookup treats a null service as its own slot', async () => {
+await t('checked_in_at is an absolute instant; the local date survives the UTC rollover', async () => {
+  // 5:23 pm Sunday in Oregon (PDT) is 00:23 Monday in UTC.
   const { rows } = await q(
-    `select * from check_ins
-     where student_id = $1::uuid
-       and session_date = $2::date
-       and coalesce(service_id::text, '') = $3
-     order by checked_in_at desc limit 1`,
-    [studentId, TODAY, '']
+    `insert into check_ins (student_id, session_date, security_code, checked_in_at)
+     values ($1::uuid, '2026-08-30', 'ROLL', '2026-08-30 17:23:54 America/Los_Angeles')
+     returning checked_in_at,
+               -- Compared as text: a timezone-less value parsed into a JS Date
+               -- would be read in the test machine's own timezone.
+               to_char(checked_in_at at time zone 'UTC', 'YYYY-MM-DD') as utc_date,
+               to_char(checked_in_at at time zone 'America/Los_Angeles', 'YYYY-MM-DD HH24:MI:SS') as pacific`,
+    [studentId]
   )
-  assert.strictEqual(rows.length, 0, 'a null-service check-in is separate from a service one')
+  assert.strictEqual(rows[0].checked_in_at.toISOString(), '2026-08-31T00:23:54.000Z', 'stored as UTC')
+  assert.strictEqual(rows[0].utc_date, '2026-08-31', 'Monday in UTC')
+  assert.strictEqual(rows[0].pacific, '2026-08-30 17:23:54', 'reads back as 5:23 pm Sunday in the church timezone')
+  await q(`delete from check_ins where security_code = 'ROLL'`)
 })
 
 await t('reprint bumps the counter instead of inserting a second row', async () => {
@@ -182,7 +180,7 @@ await t('security codes in use today can be collected for collision checks', asy
 // --- /api/checkins/today --------------------------------------------------
 await t('today view joins students and aggregates by grade', async () => {
   const { rows } = await q(
-    `select c.id, c.security_code, c.service_name, c.grade,
+    `select c.id, c.security_code, c.grade,
             c.checked_in_at, c.checked_out_at, c.checked_out_by, c.reprints,
             s.id as student_id, s.korean_name, s.english_name
      from check_ins c
@@ -247,30 +245,6 @@ await t('settings load reads the four keys in one query', async () => {
   assert.ok(Array.isArray(rows.find((r) => r.key === 'grades').value))
 })
 
-// --- /api/services --------------------------------------------------------
-await t('replacing the service list deactivates rather than deletes', async () => {
-  await q(`update services set active = false`)
-  await q(
-    `update services set name = $1, start_time = $2::time, sort_order = $3, active = true
-     where id = $4::uuid`,
-    ['1부 예배', '09:30', 1, serviceId]
-  )
-  await q(
-    `insert into services (name, start_time, sort_order, active) values ($1, $2::time, $3, true)`,
-    ['3부 예배', '13:00', 3]
-  )
-  const { rows } = await q(
-    `select name, start_time from services where active order by sort_order, name`
-  )
-  assert.deepStrictEqual(rows.map((r) => r.name), ['1부 예배', '3부 예배'])
-  // The historical check-in still resolves its FK even though 2부 is inactive.
-  const { rows: ci } = await q(
-    `select service_name from check_ins where session_date = $1::date`,
-    [TODAY]
-  )
-  assert.strictEqual(ci[0].service_name, svc[0].name, 'history kept its own copy of the name')
-})
-
 // --- /api/stats -----------------------------------------------------------
 await t('stats aggregates run over a date range', async () => {
   const from = '2026-08-01'
@@ -284,14 +258,6 @@ await t('stats aggregates run over a date range', async () => {
   )
   assert.strictEqual(daily.rows.length, 1)
   assert.strictEqual(daily.rows[0].total, 1)
-
-  const byService = await q(
-    `select coalesce(nullif(btrim(service_name), ''), '(none)') as service, count(*)::int as total
-     from check_ins where session_date between $1::date and $2::date
-     group by 1 order by total desc`,
-    [from, to]
-  )
-  assert.strictEqual(byService.rows[0].total, 1)
 
   const perStudent = await q(
     `select s.id, s.korean_name, s.english_name, s.grade,

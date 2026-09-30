@@ -7,7 +7,7 @@ import { AlertIcon, ArrowLeftIcon, CheckIcon, PrinterIcon } from '@/components/i
 import { useApp } from '@/components/app-context'
 import { randomCheckInMessage } from '@/lib/messages'
 import { PrintError, buildLabelJob, sendToBridge } from '@/lib/print-client'
-import type { LabelPayload, LabelSettings, PrinterSettings, Service, Student } from '@/lib/types'
+import type { LabelPayload, LabelSettings, PrinterSettings, Student } from '@/lib/types'
 
 type Phase = 'loading' | 'select' | 'submitting' | 'confirm'
 type PrintPhase = 'idle' | 'rendering' | 'sending' | 'done' | 'failed' | 'skipped'
@@ -15,7 +15,6 @@ type PrintPhase = 'idle' | 'rendering' | 'sending' | 'done' | 'failed' | 'skippe
 interface HistoryRow {
   id: string
   session_date: string
-  service_name: string | null
   checked_in_at: string
 }
 
@@ -29,7 +28,6 @@ export default function CheckInScreen() {
   const [student, setStudent] = useState<Student | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
   const [selected, setSelected] = useState(false)
-  const [serviceId, setServiceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [message] = useState(() => randomCheckInMessage())
@@ -66,12 +64,6 @@ export default function CheckInScreen() {
       cancelled = true
     }
   }, [studentId])
-
-  // Pre-select the service that is closest to right now.
-  useEffect(() => {
-    if (serviceId !== null || app.services.length === 0) return
-    setServiceId(nearestService(app.services, app.general.timezone))
-  }, [app.services, app.general.timezone, serviceId])
 
   const alreadyToday = useMemo(() => {
     const todayRow = history.find((h) => isToday(h.session_date, app.general.timezone))
@@ -138,7 +130,7 @@ export default function CheckInScreen() {
       const response = await fetch('/api/checkins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId, serviceId }),
+        body: JSON.stringify({ studentId }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? 'check-in failed')
@@ -158,7 +150,7 @@ export default function CheckInScreen() {
       setError(err instanceof Error ? err.message : '체크인에 실패했습니다.')
       setPhase('select')
     }
-  }, [selected, phase, studentId, serviceId, app.general.autoReturnSeconds, runPrint])
+  }, [selected, phase, studentId, app.general.autoReturnSeconds, runPrint])
 
   // --- auto-return to the default screen ----------------------------------
   // The countdown starts once the label has actually come out, so a child is
@@ -191,9 +183,7 @@ export default function CheckInScreen() {
                 {displayName(result.labelPayload.koreanName, result.labelPayload.englishName)}
               </div>
               <div style={{ fontSize: 16, opacity: 0.9 }}>
-                {[result.labelPayload.grade, result.labelPayload.serviceName]
-                  .filter(Boolean)
-                  .join(' · ')}
+                {result.labelPayload.grade}
               </div>
             </div>
             <div className="confirmCodeBox">{result.labelPayload.securityCode}</div>
@@ -295,21 +285,6 @@ export default function CheckInScreen() {
                 </div>
               </div>
 
-              {app.services.length > 1 && (
-                <div className="serviceChoice">
-                  {app.services.map((service) => (
-                    <button
-                      key={service.id}
-                      type="button"
-                      className={`serviceBtn ${serviceId === service.id ? 'serviceBtnOn' : ''}`}
-                      onClick={() => setServiceId(service.id)}
-                    >
-                      {service.name}
-                      {service.start_time ? ` · ${formatTime(service.start_time)}` : ''}
-                    </button>
-                  ))}
-                </div>
-              )}
             </>
           )}
         </div>
@@ -358,45 +333,6 @@ function printStatusText(phase: PrintPhase, error: string | null): string {
 }
 
 // ---------------------------------------------------------------- helpers
-
-function formatTime(value: string): string {
-  const [h, m] = value.split(':')
-  const hour = Number(h)
-  if (!Number.isFinite(hour)) return value
-  const suffix = hour < 12 ? 'am' : 'pm'
-  const display = hour % 12 === 0 ? 12 : hour % 12
-  return `${display}:${m ?? '00'} ${suffix}`
-}
-
-/** Minutes since midnight, in the church's timezone. */
-function minutesNow(timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date())
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0')
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0')
-  return hour * 60 + minute
-}
-
-function nearestService(services: Service[], timezone: string): string | null {
-  if (services.length === 0) return null
-  const now = minutesNow(timezone)
-  let best = services[0]
-  let bestDistance = Number.POSITIVE_INFINITY
-  for (const service of services) {
-    if (!service.start_time) continue
-    const [h, m] = service.start_time.split(':').map(Number)
-    const distance = Math.abs(h * 60 + (m || 0) - now)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      best = service
-    }
-  }
-  return best.id
-}
 
 function isToday(sessionDate: string, timezone: string): boolean {
   const today = new Intl.DateTimeFormat('en-CA', {

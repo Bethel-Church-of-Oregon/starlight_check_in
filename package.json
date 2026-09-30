@@ -11,7 +11,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/migrate.mjs --seed",
     "icons": "node scripts/gen-icons.mjs",
-    "test": "tsc src/lib/raster.ts src/lib/brother.ts src/lib/label.ts --outDir .tmp-test --module commonjs --target es2022 --moduleResolution node --lib dom,es2022 --skipLibCheck && node tests/raster.test.cjs && node tests/label.test.cjs",
+    "test": "tsc src/lib/raster.ts src/lib/brother.ts src/lib/label.ts src/lib/settings.ts --outDir .tmp-test --module commonjs --target es2022 --moduleResolution node --lib dom,es2022 --skipLibCheck && node tests/raster.test.cjs && node tests/label.test.cjs && node tests/time.test.cjs",
     "db:proxy": "node scripts/neon-http-proxy.mjs",
     "test:sql": "node tests/sql.test.mjs",
     "bridge": "node bridge/bridge.mjs"

@@ -28,7 +28,6 @@ export const DEFAULT_LABEL: LabelSettings = {
   showGrade: true,
   showCode: true,
   showDateTime: true,
-  showService: true,
   nameScale: 1,
 }
 

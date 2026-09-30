@@ -84,10 +84,9 @@ export function drawLabel(
 
   const contentWidth = contentRight - margin
 
-  // ---- footer line: grade · service · time -------------------------------
+  // ---- footer lines: grade, then time -------------------------------
   const footerParts: string[] = []
   if (settings.showGrade && payload.grade) footerParts.push(payload.grade)
-  if (settings.showService && payload.serviceName) footerParts.push(payload.serviceName)
 
   const metaParts: string[] = []
   if (settings.showDateTime) metaParts.push(formatStamp(payload.checkedInAt, timezone))

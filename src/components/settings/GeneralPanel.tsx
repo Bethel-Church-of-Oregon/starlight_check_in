@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PlusIcon, TrashIcon } from '@/components/icons'
-import type { GeneralSettings, Service } from '@/lib/types'
+import type { GeneralSettings } from '@/lib/types'
 import { Notice, Panel } from './shared'
 
 const TIMEZONES = [
@@ -16,35 +16,22 @@ const TIMEZONES = [
   'Asia/Seoul',
 ]
 
-interface ServiceDraft {
-  id?: string
-  name: string
-  startTime: string
-}
-
 export default function GeneralPanel({
   general,
   grades,
-  services,
   onSave,
-  onSaveServices,
 }: {
   general: GeneralSettings
   grades: string[]
-  services: Service[]
   onSave: (patch: {
     general?: Partial<GeneralSettings>
     grades?: string[]
     adminCode?: string
   }) => Promise<void>
-  onSaveServices: (services: { id?: string; name: string; startTime: string | null }[]) => Promise<void>
 }) {
   const router = useRouter()
   const [draft, setDraft] = useState(general)
   const [gradeDraft, setGradeDraft] = useState<string[]>(grades)
-  const [serviceDraft, setServiceDraft] = useState<ServiceDraft[]>(() =>
-    services.map((s) => ({ id: s.id, name: s.name, startTime: s.start_time?.slice(0, 5) ?? '' }))
-  )
   const [newCode, setNewCode] = useState('')
   const [confirmCode, setConfirmCode] = useState('')
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
@@ -52,13 +39,6 @@ export default function GeneralPanel({
 
   useEffect(() => setDraft(general), [general])
   useEffect(() => setGradeDraft(grades), [grades])
-  useEffect(
-    () =>
-      setServiceDraft(
-        services.map((s) => ({ id: s.id, name: s.name, startTime: s.start_time?.slice(0, 5) ?? '' }))
-      ),
-    [services]
-  )
 
   const dirty = useMemo(
     () =>
@@ -73,23 +53,6 @@ export default function GeneralPanel({
     try {
       await onSave({ general: draft, grades: gradeDraft.filter((g) => g.trim() !== '') })
       setMessage({ kind: 'ok', text: '저장되었습니다.' })
-    } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : '저장 실패' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveServices = async () => {
-    setSaving(true)
-    setMessage(null)
-    try {
-      await onSaveServices(
-        serviceDraft
-          .filter((s) => s.name.trim() !== '')
-          .map((s) => ({ id: s.id, name: s.name.trim(), startTime: s.startTime || null }))
-      )
-      setMessage({ kind: 'ok', text: '회차가 저장되었습니다.' })
     } catch (error) {
       setMessage({ kind: 'error', text: error instanceof Error ? error.message : '저장 실패' })
     } finally {
@@ -226,67 +189,6 @@ export default function GeneralPanel({
             <PlusIcon size={15} /> 학년 추가
           </button>
         </div>
-      </Panel>
-
-      <Panel
-        title="예배 회차"
-        footer={
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setServiceDraft([...serviceDraft, { name: '', startTime: '' }])}
-            >
-              <PlusIcon size={15} /> 회차 추가
-            </button>
-            <button type="button" className="btn btnPrimary" onClick={() => void saveServices()} disabled={saving}>
-              회차 저장
-            </button>
-          </>
-        }
-      >
-        <p className="fieldHint" style={{ marginBottom: 14 }}>
-          회차가 두 개 이상이면 체크인 화면에 선택 버튼이 나타나고, 현재 시각에 가장 가까운 회차가
-          미리 선택됩니다.
-        </p>
-
-        {serviceDraft.map((service, index) => (
-          <div key={service.id ?? `new-${index}`} style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-            <div className="field" style={{ flex: '1 1 auto' }}>
-              <input
-                value={service.name}
-                placeholder="1부 예배"
-                onChange={(event) => {
-                  const next = [...serviceDraft]
-                  next[index] = { ...next[index], name: event.target.value }
-                  setServiceDraft(next)
-                }}
-              />
-            </div>
-            <div className="field" style={{ flex: '0 0 130px' }}>
-              <input
-                type="time"
-                value={service.startTime}
-                onChange={(event) => {
-                  const next = [...serviceDraft]
-                  next[index] = { ...next[index], startTime: event.target.value }
-                  setServiceDraft(next)
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={() => setServiceDraft(serviceDraft.filter((_, i) => i !== index))}
-              aria-label="Remove service"
-            >
-              <TrashIcon size={17} />
-            </button>
-          </div>
-        ))}
-        {serviceDraft.length === 0 && (
-          <div className="emptyState">회차가 없습니다. 회차 없이도 체크인은 동작합니다.</div>
-        )}
       </Panel>
 
       <Panel

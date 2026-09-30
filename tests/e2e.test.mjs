@@ -157,7 +157,7 @@ await t('settings endpoint is live and not degraded', async () => {
   assert.strictEqual(status, 200)
   assert.strictEqual(body.degraded, false, 'database is reachable')
   assert.ok(body.grades.length > 0)
-  assert.ok(body.services.length > 0, 'seeded services are present')
+  assert.strictEqual(body.services, undefined, 'service selection is gone')
   assert.strictEqual(body.admin, false, 'no admin session yet')
   // The kiosk needs the full print settings to assemble jobs itself; the
   // printer's own IP lives on the bridge and must not appear here.
@@ -234,10 +234,10 @@ await t('the new student is immediately searchable', async () => {
 })
 
 await t('checking in returns a label payload with a 4-character code', async () => {
-  const services = (await api('/api/settings')).body.services
+  const before = Date.now()
   const { status, body } = await api('/api/checkins', {
     method: 'POST',
-    body: JSON.stringify({ studentId, serviceId: services[0].id }),
+    body: JSON.stringify({ studentId }),
   })
   assert.strictEqual(status, 200)
   assert.strictEqual(body.alreadyCheckedIn, false)
@@ -245,7 +245,18 @@ await t('checking in returns a label payload with a 4-character code', async () 
   assert.strictEqual(body.labelPayload.koreanName, `한서준${RUN}`)
   assert.strictEqual(body.labelPayload.englishName, `Seojun Han ${RUN}`)
   assert.strictEqual(body.labelPayload.grade, '4th')
-  assert.strictEqual(body.labelPayload.serviceName, services[0].name)
+  assert.strictEqual(body.labelPayload.serviceName, undefined, 'no service on the label')
+  assert.strictEqual(body.checkIn.service_id, null)
+
+  // Time: checked_in_at is the real instant; session_date is today in the
+  // church's timezone (America/Los_Angeles by default), not today in UTC.
+  const at = new Date(body.checkIn.checked_in_at).getTime()
+  assert.ok(Math.abs(at - before) < 60000, 'checked_in_at is now')
+  const tz = (await api('/api/settings')).body.general.timezone
+  const localToday = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(at))
+  assert.strictEqual(body.checkIn.session_date.slice(0, 10), localToday, `session_date is today in ${tz}`)
   assert.ok(body.printer.mediaWidthMm > 0 && body.printer.labelLengthMm > 0)
   assert.ok('bridgeUrl' in body.printer, 'check-in hands the iPad everything it needs to print')
   assert.ok(body.autoReturnSeconds >= 2)
@@ -254,10 +265,9 @@ await t('checking in returns a label payload with a 4-character code', async () 
 })
 
 await t('checking in again reuses the row and the same code', async () => {
-  const services = (await api('/api/settings')).body.services
   const { body } = await api('/api/checkins', {
     method: 'POST',
-    body: JSON.stringify({ studentId, serviceId: services[0].id }),
+    body: JSON.stringify({ studentId }),
   })
   assert.strictEqual(body.alreadyCheckedIn, true, 'recognised as a reprint')
   assert.strictEqual(body.labelPayload.securityCode, securityCode, 'code is stable across reprints')
@@ -401,7 +411,6 @@ await t('stats endpoint returns all of its aggregates', async () => {
   assert.ok(todayRow, `today (${body.today}) is present in the daily roll-up`)
   assert.ok(todayRow.total >= 1)
   assert.ok(Array.isArray(body.byGrade))
-  assert.ok(Array.isArray(body.byService))
   assert.ok(Array.isArray(body.perStudent))
   assert.ok(body.roster.active_students >= 8)
   assert.ok(body.perStudent.some((s) => s.visits === 0), 'non-attendees included')
@@ -409,11 +418,10 @@ await t('stats endpoint returns all of its aggregates', async () => {
 
 // --- print queue ----------------------------------------------------------
 await t('a check-in label goes API → iPad assembly → bridge → printer', async () => {
-  const services = (await api('/api/settings')).body.services
   // Checking in again reprints, which is also exactly what a volunteer does.
   const checkIn = await api('/api/checkins', {
     method: 'POST',
-    body: JSON.stringify({ studentId, serviceId: services[0].id }),
+    body: JSON.stringify({ studentId }),
   })
   assert.strictEqual(checkIn.status, 200)
   const settings = checkIn.body.printer
@@ -469,10 +477,9 @@ await t('the wrong bridge key is refused before anything prints', async () => {
 await t('turning printing off is visible to the iPad at check-in', async () => {
   await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ printer: { enabled: false } }) })
   try {
-    const services = (await api('/api/settings')).body.services
     const checkIn = await api('/api/checkins', {
       method: 'POST',
-      body: JSON.stringify({ studentId, serviceId: services[0].id }),
+      body: JSON.stringify({ studentId }),
     })
     assert.strictEqual(checkIn.body.printer.enabled, false, 'the iPad skips printing')
   } finally {

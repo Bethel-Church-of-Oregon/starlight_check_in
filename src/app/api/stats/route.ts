@@ -39,15 +39,6 @@ export async function GET(request: NextRequest) {
     order by 1
   `
 
-  const byService = await sql`
-    select coalesce(nullif(btrim(service_name), ''), '(none)') as service,
-           count(*)::int as total
-    from check_ins
-    where session_date between ${from}::date and ${to}::date
-    group by 1
-    order by total desc
-  `
-
   const perStudent = await sql`
     select s.id, s.korean_name, s.english_name, s.grade,
            count(c.id)::int as visits,
@@ -76,7 +67,6 @@ export async function GET(request: NextRequest) {
     timezone: settings.general.timezone,
     daily,
     byGrade,
-    byService,
     perStudent,
     roster: roster[0] ?? { active_students: 0, new_last_30_days: 0 },
   })

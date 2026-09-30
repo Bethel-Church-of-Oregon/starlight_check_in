@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const sql = getSql()
   const checkIns = await sql`
-    select c.id, c.security_code, c.service_name, c.grade,
+    select c.id, c.security_code, c.grade,
            c.checked_in_at, c.checked_out_at, c.checked_out_by, c.reprints,
            s.id as student_id, s.korean_name, s.english_name
     from check_ins c

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Applies db/schema.sql and inserts default settings / services.
+ * Applies db/schema.sql and inserts default settings.
  *
  *   npm run db:migrate          # schema + defaults (idempotent)
  *   npm run db:seed             # the above + a handful of demo students
@@ -73,16 +73,10 @@ const DEFAULT_SETTINGS = {
     showGrade: true,
     showCode: true,
     showDateTime: true,
-    showService: true,
     nameScale: 1,
   },
   grades: ['K', '1st', '2nd', '3rd', '4th', '5th', '6th'],
 }
-
-const DEFAULT_SERVICES = [
-  { name: '1부 예배', start_time: '09:30', sort_order: 1 },
-  { name: '2부 예배', start_time: '11:00', sort_order: 2 },
-]
 
 const DEMO_STUDENTS = [
   ['김민준', 'Minjun Kim', '3rd', 'male'],
@@ -128,17 +122,6 @@ async function main() {
       JSON.stringify({ hash: hashCode('1234') }),
     ])
     console.log('   admin code set to 1234 — change it on the Settings screen')
-  }
-
-  const { rows: serviceRows } = await client.query('select count(*)::int as n from services')
-  if (serviceRows[0].n === 0) {
-    for (const s of DEFAULT_SERVICES) {
-      await client.query(
-        'insert into services (name, start_time, sort_order) values ($1, $2, $3)',
-        [s.name, s.start_time, s.sort_order]
-      )
-    }
-    console.log(`   seeded ${DEFAULT_SERVICES.length} services`)
   }
 
   if (process.argv.includes('--seed')) {

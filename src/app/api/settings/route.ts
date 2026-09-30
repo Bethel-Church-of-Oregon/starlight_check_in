@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server'
-import { getSql } from '@/lib/db'
 import { hasAdminSession, setAdminCode } from '@/lib/admin'
 import {
   DEFAULT_GENERAL,
@@ -14,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET is public because every screen needs the church name, grade list,
- * services, label geometry — and, now that the iPad prints straight to the
+ * label geometry — and, now that the iPad prints straight to the
  * LAN bridge, the full print settings including the bridge address and key.
  * Neither is a secret: the key only stops other devices on the church Wi-Fi
  * from printing, and the printer's own IP lives on the bridge, not here.
@@ -23,15 +22,8 @@ export async function GET() {
   const admin = await hasAdminSession().catch(() => false)
 
   let settings: Awaited<ReturnType<typeof loadSettings>>
-  let services: unknown[]
   try {
-    const sql = getSql()
     settings = await loadSettings()
-    services = await sql`
-      select id, name, start_time, sort_order, active
-      from services where active
-      order by sort_order, start_time nulls last, name
-    `
   } catch (error) {
     // Every screen calls this on mount. If the database is unreachable the
     // kiosk must still paint — a volunteer seeing the search box and an error
@@ -42,7 +34,6 @@ export async function GET() {
       general: DEFAULT_GENERAL,
       label: DEFAULT_LABEL,
       grades: DEFAULT_GRADES,
-      services: [],
       admin: false,
       printer: DEFAULT_PRINTER,
     })
@@ -53,7 +44,6 @@ export async function GET() {
     general: settings.general,
     label: settings.label,
     grades: settings.grades,
-    services,
     admin,
     printer: settings.printer,
   })
@@ -125,7 +115,6 @@ export async function PATCH(request: NextRequest) {
       showGrade: bool(incoming.showGrade, current.label.showGrade),
       showCode: bool(incoming.showCode, current.label.showCode),
       showDateTime: bool(incoming.showDateTime, current.label.showDateTime),
-      showService: bool(incoming.showService, current.label.showService),
       nameScale: num(incoming.nameScale, current.label.nameScale, 0.6, 1.6),
     })
   }

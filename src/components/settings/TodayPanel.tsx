@@ -9,7 +9,6 @@ import { Notice, Panel, Stat, formatClock } from './shared'
 interface Row {
   id: string
   security_code: string
-  service_name: string | null
   grade: string | null
   checked_in_at: string
   checked_out_at: string | null
@@ -61,7 +60,7 @@ export default function TodayPanel() {
     []
   )
 
-  // A settings screen left open on a laptop during service should stay current
+  // A settings screen left open on a laptop during worship should stay current
   // — but not while it is a background tab, and not forever: each refresh
   // wakes the database, and a tab left open all week would keep Neon's compute
   // running around the clock (≈180 CU-hours against the free plan's 100).
@@ -149,7 +148,6 @@ export default function TodayPanel() {
             <tr>
               <th>이름</th>
               <th>학년</th>
-              <th>회차</th>
               <th>코드</th>
               <th>체크인</th>
               <th>체크아웃</th>
@@ -171,7 +169,6 @@ export default function TodayPanel() {
                   </span>
                 </td>
                 <td>{row.grade ?? '—'}</td>
-                <td>{row.service_name ?? '—'}</td>
                 <td>
                   <span className="chip chipBlue" style={{ letterSpacing: 1, fontWeight: 700 }}>
                     {row.security_code}
@@ -208,7 +205,7 @@ export default function TodayPanel() {
             ))}
             {(data?.checkIns.length ?? 0) === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 26 }}>
+                <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 26 }}>
                   아직 체크인한 학생이 없습니다.
                 </td>
               </tr>
