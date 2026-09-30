@@ -140,14 +140,15 @@ QL-820NWBc 는 QL-820NWB 의 후속 리비전입니다. Brother는 두 모델을
 
 ### 3-4. 라즈베리파이 프린트 브릿지
 
-[bridge/README.md](bridge/README.md) 를 따라 설치합니다. 요약하면:
+파이에 SSH로 접속해서 한 줄이면 됩니다 (모니터 불필요):
 
-1. 파이에 64-bit OS(Raspberry Pi OS Lite 또는 Ubuntu Server)와 고정 IP, Node 24 설치
-2. `bridge/` 폴더를 파이에 복사
-3. HTTPS 인증서 — 교회 도메인 + Let's Encrypt, 또는 `make-cert.sh` + 아이패드에 CA 설치
-4. `config.json` 에 프린터 IP와 브릿지 키
-5. systemd 서비스로 등록
-6. 앱 세팅 → 프린터 탭에 **브릿지 주소**와 **브릿지 키** 입력 → 테스트 인쇄
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Bethel-Church-of-Oregon/starlight_check_in/main/bridge/install.sh)
+```
+
+OS 굽기부터 아이패드 인증서 설치까지 전체 순서는 [bridge/README.md](bridge/README.md)
+의 **빠른 설치**에 있습니다. 설치가 끝나면 나오는 **브릿지 주소**와 **브릿지 키**를
+앱 세팅 → 프린터 탭에 넣습니다.
 
 ### 3-5. 아이패드
 
@@ -274,7 +275,7 @@ PRINTER_HOST=192.168.1.50 BRIDGE_KEY=dev npm run bridge
 | 명령 | 내용 |
 |---|---|
 | `npm test` | Brother 래스터 커맨드 조립, PackBits, 라벨 비트 패킹, 출석 날짜·타임존 (27) |
-| `node tests/bridge.test.mjs` | 실제 브릿지 프로세스 + 가짜 프린터. HTTPS·CORS·동시 인쇄·용지 없음 (18) |
+| `node tests/bridge.test.mjs` | 실제 브릿지 프로세스 + 가짜 프린터. HTTPS·CORS·동시 인쇄·용지 없음·CA 제공 (20) |
 | `npm run test:sql` | 라우트가 실제로 쓰는 SQL을 진짜 Postgres에 실행 (19) |
 | `node tests/e2e.test.mjs` | 앱 API → 아이패드와 같은 코드로 작업 조립 → 브릿지 → 가짜 프린터 (31) |
 
@@ -332,6 +333,7 @@ db/schema.sql                 전체 스키마 (멱등)
 vercel.json                   함수 지역 고정 (pdx1 — Neon 오리건과 같은 곳)
 bridge/
   bridge.mjs                  라즈베리파이 프린트 브릿지 (HTTPS → TCP 9100)
+  install.sh                  파이 설치 스크립트 (한 줄 설치, 재실행 = 업데이트)
   make-cert.sh                도메인 없을 때 쓰는 자체 인증서 발급
   starlight-bridge.service    systemd 서비스
   README.md                   파이 설치 안내

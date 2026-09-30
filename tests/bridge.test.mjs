@@ -59,6 +59,7 @@ function startBridge(env = {}) {
       PRINTER_PORT: String(PRINTER_PORT),
       BRIDGE_KEY: KEY,
       BRIDGE_ALLOWED_ORIGINS: APP_ORIGIN,
+      BRIDGE_CA_FILE: '/nonexistent/ca.crt',
       CONNECT_TIMEOUT_MS: '1500',
       ...env,
     },
@@ -102,6 +103,13 @@ await t('health check answers without a key', async () => {
   assert.strictEqual(response.status, 200)
   assert.strictEqual(body.service, 'starlight-print-bridge')
   assert.strictEqual(body.printerConfigured, true)
+})
+
+await t('/ca.crt is 404 when there is no local CA (Let\'s Encrypt setups)', async () => {
+  const response = await fetch(`${base}/ca.crt`)
+  assert.strictEqual(response.status, 404)
+  const health = await (await fetch(`${base}/`)).json()
+  assert.strictEqual(health.caAvailable, false)
 })
 
 await t('status and print refuse a missing or wrong key', async () => {
@@ -252,6 +260,7 @@ printer = await startFakePrinter(PRINTER_PORT)
 bridge = await startBridge({
   BRIDGE_CERT: join(certDir, 'certs', 'bridge.crt'),
   BRIDGE_KEY_FILE: join(certDir, 'certs', 'bridge.key'),
+  BRIDGE_CA_FILE: join(certDir, 'certs', 'ca.crt'),
 })
 
 function httpsRequest(path, { method = 'GET', headers = {}, body, trust = true } = {}) {
@@ -280,6 +289,28 @@ await t('serves HTTPS with a certificate the local CA vouches for', async () => 
 
 await t('a client that does not trust the CA is refused (TLS is real)', async () => {
   await assert.rejects(() => httpsRequest('/', { trust: false }), /self[- ]signed|unable to verify|certificate/i)
+})
+
+await t('serves the local CA certificate for iPads, and nothing private', async () => {
+  const response = await new Promise((resolvePromise, reject) => {
+    https
+      .get({ host: '127.0.0.1', port: BRIDGE_PORT, path: '/ca.crt', ca }, (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () =>
+          resolvePromise({ status: res.statusCode, type: res.headers['content-type'], body: Buffer.concat(chunks) })
+        )
+      })
+      .on('error', reject)
+  })
+  assert.strictEqual(response.status, 200)
+  assert.strictEqual(response.type, 'application/x-x509-ca-cert', 'iOS offers to install it')
+  assert.ok(response.body.equals(ca), 'exactly the CA certificate')
+  assert.ok(!response.body.toString().includes('PRIVATE KEY'), 'no private key material')
+  for (const path of ['/ca.key', '/bridge.key', '/certs/ca.key', '/../certs/ca.key']) {
+    const other = await httpsRequest(path).catch(() => ({ status: 'error' }))
+    assert.notStrictEqual(other.status, 200, `${path} must not be served`)
+  }
 })
 
 await t('prints over HTTPS', async () => {

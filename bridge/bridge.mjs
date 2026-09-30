@@ -59,6 +59,8 @@ const config = {
   port: Number(pick('BRIDGE_PORT', 'port', 9443)),
   certFile: pick('BRIDGE_CERT', 'certFile', ''),
   keyFile: pick('BRIDGE_KEY_FILE', 'keyFile', ''),
+  /** Public certificate of the local CA from make-cert.sh, served at /ca.crt. */
+  caFile: pick('BRIDGE_CA_FILE', 'caFile', 'certs/ca.crt'),
   /** Shared key the app sends in `X-Bridge-Key`. Empty disables the check. */
   key: pick('BRIDGE_KEY', 'key', ''),
   /** Browser origins allowed to call the bridge. Empty allows any origin. */
@@ -293,7 +295,28 @@ async function handle(request, response) {
       service: 'starlight-print-bridge',
       version: VERSION,
       printerConfigured: Boolean(config.printerHost),
+      caAvailable: existsSync(resolve(here, config.caFile)),
     })
+  }
+
+  // The local CA's *public* certificate, so an iPad can install it straight
+  // from Safari (Windows PCs cannot AirDrop). Only ca.crt is ever served —
+  // never ca.key or the bridge's private key. With a Let's Encrypt setup there
+  // is no local CA and this is simply 404.
+  if (request.method === 'GET' && url.pathname === '/ca.crt') {
+    const caPath = resolve(here, config.caFile)
+    if (!existsSync(caPath)) {
+      return send(response, request, 404, { ok: false, error: '로컬 CA 인증서가 없습니다' })
+    }
+    const pem = readFileSync(caPath)
+    response.writeHead(200, {
+      // This MIME type makes iOS Safari offer to install it as a profile.
+      'Content-Type': 'application/x-x509-ca-cert',
+      'Content-Disposition': 'attachment; filename="starlight-bridge-ca.crt"',
+      'Content-Length': pem.length,
+      'Cache-Control': 'no-store',
+    })
+    return response.end(pem)
   }
 
   if (!keyMatches(request.headers['x-bridge-key'])) {
